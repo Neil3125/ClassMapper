@@ -94,8 +94,20 @@ html, body {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
 }
 
-.topbar__title { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
-.topbar__title strong { font-size: 1.05rem; letter-spacing: 0.2px; }
+.topbar__title {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+  overflow: hidden;
+}
+.topbar__title strong {
+  font-size: 1.05rem;
+  letter-spacing: 0.2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .topbar__sub { font-size: 0.7rem; color: var(--gold-soft); white-space: nowrap; }
 .topbar__actions { display: flex; gap: 4px; flex-shrink: 0; }
 
@@ -111,7 +123,9 @@ html, body {
   cursor: pointer;
   display: grid;
   place-items: center;
+  flex-shrink: 0;
 }
+.icon-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
 .icon-btn:hover { background: rgba(255, 255, 255, 0.24); }
 .icon-btn:active { transform: translateY(1px); }
 .icon-btn[aria-pressed="true"] { background: var(--gold); color: var(--crimson-dark); border-color: var(--gold); }
@@ -509,7 +523,7 @@ fieldset.days legend { font-size: 0.78rem; font-weight: 600; color: var(--ink-so
   margin-bottom: 8px;
 }
 .dropzone:hover, .dropzone.is-over { border-color: var(--crimson); background: #fdf7f7; }
-.dropzone__icon { font-size: 1.7rem; color: var(--crimson); }
+.dropzone__icon { color: var(--crimson); display: inline-flex; }
 
 .backup-paste {
   display: block;
@@ -607,6 +621,20 @@ fieldset.days legend { font-size: 0.78rem; font-weight: 600; color: var(--ink-so
 @media (max-width: 480px) {
   .nextcard { max-height: 46vh; }
   .topbar__sub { display: none; }
+  /* Six icon buttons at full size didn't leave enough room for the title on
+     a phone — the title was overlapping the button row. Shrink both the
+     buttons and the gaps between them; the title also truncates with an
+     ellipsis now as a second line of defense on very narrow screens. */
+  .topbar { padding: calc(6px + var(--safe-t)) 8px 6px; gap: 6px; }
+  .topbar__actions { gap: 2px; }
+  .icon-btn { width: 36px; height: 36px; border-radius: 9px; }
+  .icon-btn svg { width: 18px; height: 18px; }
+}
+
+@media (max-width: 360px) {
+  .topbar__title strong { font-size: 0.95rem; }
+  .icon-btn { width: 33px; height: 33px; }
+  .icon-btn svg { width: 16px; height: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
