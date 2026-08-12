@@ -55,6 +55,14 @@
       <span id="next-leave" class="pill pill--accent"></span>
     </div>
     <div class="nextcard__note" id="next-note" hidden></div>
+
+    <div class="openin" id="next-openin" hidden>
+      <span class="openin__label">Open in</span>
+      <a id="open-google" class="openin__btn" target="_blank" rel="noopener">Google Maps</a>
+      <a id="open-apple" class="openin__btn" target="_blank" rel="noopener">Apple Maps</a>
+      <a id="open-waze" class="openin__btn" target="_blank" rel="noopener">Waze</a>
+    </div>
+
     <details class="steps" id="next-steps" hidden>
       <summary>Walking directions</summary>
       <ol id="next-steps-list"></ol>
@@ -76,6 +84,12 @@
     <div id="today-summary" class="summary"></div>
     <ol id="today-list" class="daylist"></ol>
     <button id="btn-route-day" class="btn btn--primary btn--block">Show whole day's route</button>
+    <a id="btn-route-day-google" class="btn btn--block" target="_blank" rel="noopener">Open whole day in Google Maps</a>
+    <p class="hint">
+      Only Google Maps' link format supports multiple stops in one trip, so
+      the whole-day route is Google-only. Apple Maps and Waze can only take
+      one destination at a time — use "Open in" on a single class instead.
+    </p>
   </div>
 </aside>
 

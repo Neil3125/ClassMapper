@@ -26,6 +26,7 @@ const SHELL_FILES = [
   'js/map.js',
   'js/ocr.js',
   'js/notify.js',
+  'js/external.js',
   'data/buildings.json',
   'manifest.webmanifest',
   'icons/icon-192.png',

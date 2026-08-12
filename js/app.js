@@ -7,6 +7,7 @@ import * as R from './route.js';
 import * as M from './map.js';
 import * as OCR from './ocr.js';
 import * as N from './notify.js';
+import * as EXT from './external.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
@@ -164,10 +165,12 @@ async function refresh() {
     $('#next-walk').textContent = '';
     $('#next-leave').textContent = '';
     $('#next-steps').hidden = true;
+    $('#next-openin').hidden = true;
     return;
   }
 
   const b = next.cls.buildingId ? B.get(next.cls.buildingId) : null;
+  updateOpenInLinks(b);
 
   // Label the card by how far off the class is.
   const dayOffset = Math.round((startOfDay(next.startsAt) - startOfDay(now)) / 86400000);
@@ -254,6 +257,19 @@ async function refresh() {
   }
 }
 
+/** Point the next-class card's "Open in" links at the given building. */
+function updateOpenInLinks(b) {
+  const openIn = $('#next-openin');
+  if (!b) {
+    openIn.hidden = true;
+    return;
+  }
+  $('#open-google').href = EXT.googleMapsUrl(b);
+  $('#open-apple').href = EXT.appleMapsUrl(b);
+  $('#open-waze').href = EXT.wazeUrl(b);
+  openIn.hidden = false;
+}
+
 /** Where you'll be before `next`: the building of the preceding class today. */
 function previousStop(now, next) {
   const today = S.classesToday(now);
@@ -317,6 +333,7 @@ function renderToday() {
     list.innerHTML = '<li class="is-gap">No classes today.</li>';
     $('#today-summary').innerHTML = `<strong>${S.DAY_NAMES[now.getDay()]}</strong> — nothing scheduled. Enjoy it.`;
     $('#btn-route-day').disabled = true;
+    $('#btn-route-day-google').hidden = true;
     return;
   }
 
@@ -343,6 +360,18 @@ function renderToday() {
     `<strong>${S.DAY_NAMES[now.getDay()]}</strong> — ${classCount} class${classCount === 1 ? '' : 'es'}, ` +
     `${S.fmtTime(plan[0].cls.startMin)} to ${S.fmtTime([...plan].reverse().find((p) => p.type === 'class').cls.endMin)}.`;
   $('#btn-route-day').disabled = classCount < 2;
+
+  const stops = S.classesToday(now)
+    .map((c) => (c.buildingId ? B.get(c.buildingId) : null))
+    .filter(Boolean);
+  const dayGoogleBtn = $('#btn-route-day-google');
+  const dayUrl = EXT.googleMapsDayUrl(stops);
+  if (dayUrl) {
+    dayGoogleBtn.href = dayUrl;
+    dayGoogleBtn.hidden = false;
+  } else {
+    dayGoogleBtn.hidden = true;
+  }
 }
 
 async function showDayRoute() {
@@ -406,6 +435,7 @@ function renderClassList() {
         <div class="item__actions">
           <button class="btn btn--sm" data-edit="${c.id}">Edit</button>
           ${b ? `<button class="btn btn--sm" data-show="${c.id}">Show on map</button>` : ''}
+          ${b ? `<a class="openin__btn" href="${EXT.googleMapsUrl(b)}" target="_blank" rel="noopener">Open in Maps</a>` : ''}
         </div>
       </li>`;
     })

@@ -94,10 +94,29 @@ estimate and labels it as approximate.
 - **Next class card** — course, time, building, room, walk time, and a leave-by time
 - **Turn-by-turn directions** along actual campus walkways
 - **Full-day route** — chains every class today, with total distance and free gaps
+- **Open in Google Maps / Apple Maps / Waze** — hand the current route off to whatever
+  map app you actually navigate with. Works from the next-class card, from any class
+  in your list, and for the whole day (Google Maps only — see below)
 - **Leave-by alerts** — browser notification when it's time to walk (app must be open)
 - **Offline** — opt-in in Settings; caches the app, buildings, and visited map tiles
 - **Pin-drop correction** — tap the map to fix a building's location or add a missing one
 - **Backup / restore** — export your schedule as JSON (the API key is never included)
+
+### Opening a route in another map app
+
+Tap **Open in** under the next-class card (or **Open in Maps** next to any class in
+your list) to hand that destination to Google Maps, Apple Maps, or Waze. These are
+each provider's own deep-link format — they open the app if it's installed and fall
+back to the web version if it isn't, on both iOS and Android. No account, no API key,
+and ClassMapper doesn't see anything past the tap.
+
+The start point is always left blank, so the map app uses your phone's live GPS —
+that's more accurate than anything this page could hand it, and it works even if you
+never gave ClassMapper's own browser tab location access.
+
+**Only Google Maps' link format supports multiple stops.** Apple Maps and Waze links
+can only carry one destination, so **Today → Open whole day in Google Maps** is
+Google-only by design — there's no equivalent for the other two.
 
 ### Offline mode is opt-in
 
