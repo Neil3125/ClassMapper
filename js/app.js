@@ -8,6 +8,7 @@ import * as M from './map.js';
 import * as OCR from './ocr.js';
 import * as N from './notify.js';
 import * as EXT from './external.js';
+import { APP_VERSION, BUILD_DATE } from './version.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
@@ -880,6 +881,8 @@ function saveDrafts() {
 // ---------- settings ----------
 
 function wireSettings() {
+  $('#app-version').textContent = `ClassMapper v${APP_VERSION} · ${BUILD_DATE}`;
+
   const cfg = store.settings();
   $('#input-buffer').value = String(cfg.bufferMin);
   $('#input-speed').value = String(cfg.walkSpeed);

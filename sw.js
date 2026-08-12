@@ -27,6 +27,7 @@ const SHELL_FILES = [
   'js/ocr.js',
   'js/notify.js',
   'js/external.js',
+  'js/version.js',
   'data/buildings.json',
   'manifest.webmanifest',
   'icons/icon-192.png',
