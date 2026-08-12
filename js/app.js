@@ -688,8 +688,16 @@ function wireImport() {
   const dz = $('#dropzone');
   const input = $('#file-input');
 
-  dz.onclick = () => input.click();
+  // No click handler here on purpose: <label id="dropzone"> already wraps
+  // <input id="file-input">, and a click on a label natively forwards to the
+  // control it wraps. Also calling input.click() here fired the file picker
+  // a second time on the same tap — desktop Chrome silently tolerates that,
+  // but mobile Safari/Chrome cancel or drop the picker when a file input's
+  // .click() is re-entered from within another click handler, which is why
+  // this was quietly broken specifically on phones.
   dz.onkeydown = (e) => {
+    // <label> has no native Enter/Space activation even with tabindex, so
+    // keyboard access still needs this.
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       input.click();
