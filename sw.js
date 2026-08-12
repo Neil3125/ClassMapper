@@ -8,7 +8,7 @@
 // Map tiles are cache-first — they never change and re-downloading them on
 // campus wifi is a waste.
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL = `classmapper-shell-${VERSION}`;
 const TILES = `classmapper-tiles-${VERSION}`;
 const TILE_LIMIT = 600;

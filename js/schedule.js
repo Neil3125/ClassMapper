@@ -87,10 +87,14 @@ export function classesToday(now = new Date(), classes = list()) {
  * The next class meeting at or after `now`, scanning up to 7 days ahead so a
  * Friday afternoon correctly rolls forward to Monday morning.
  *
+ * `range` is an optional {semesterStart, semesterEnd} pair; passing nothing
+ * means no restriction, which keeps this function pure and easy to test.
+ *
  * Returns { cls, startsAt: Date, endsAt: Date, minutesAway, isNow } or null.
  */
-export function nextClass(now = new Date(), classes = list()) {
+export function nextClass(now = new Date(), classes = list(), range = {}) {
   if (!classes.length) return null;
+  if (semesterPhase(now, range) !== 'in') return null;
   const nowMin = minutesNow(now);
 
   for (let offset = 0; offset < 8; offset++) {
@@ -102,6 +106,10 @@ export function nextClass(now = new Date(), classes = list()) {
       const startsAt = new Date(now);
       startsAt.setDate(startsAt.getDate() + offset);
       startsAt.setHours(Math.floor(cls.startMin / 60), cls.startMin % 60, 0, 0);
+
+      // Don't point at a meeting that falls outside the semester — including
+      // one a few days out that lands past the end date.
+      if (semesterPhase(startsAt, range) !== 'in') continue;
 
       const endsAt = new Date(startsAt);
       endsAt.setHours(Math.floor(cls.endMin / 60), cls.endMin % 60, 0, 0);
@@ -116,6 +124,35 @@ export function nextClass(now = new Date(), classes = list()) {
     }
   }
   return null;
+}
+
+// --- semester range ---------------------------------------------------------
+
+/**
+ * Compare a local date against a 'YYYY-MM-DD' string without ever handing that
+ * string to `new Date()`. A date-only string parses as **UTC**, so west of
+ * Greenwich `new Date('2026-08-12')` is the 11th locally — the exact bug this
+ * module was written to avoid. Splitting the parts and comparing numerically
+ * keeps everything in local time.
+ * Returns -1 if `d` is before the string's day, 0 if same day, 1 if after.
+ */
+export function compareToDateString(d, str) {
+  const m = String(str ?? '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const a = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  const b = Number(m[1]) * 10000 + Number(m[2]) * 100 + Number(m[3]);
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * Where `now` sits relative to an optional semester range.
+ * Both bounds are inclusive — a class on the last day still counts.
+ * Returns 'before' | 'after' | 'in'.
+ */
+export function semesterPhase(now = new Date(), range = {}) {
+  if (compareToDateString(now, range.semesterStart) === -1) return 'before';
+  if (compareToDateString(now, range.semesterEnd) === 1) return 'after';
+  return 'in';
 }
 
 /** The class happening right now, if any. */

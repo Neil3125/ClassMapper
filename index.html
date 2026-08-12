@@ -11,9 +11,14 @@
 </head>
 <body>
 
-<div id="map" aria-label="Campus map"></div>
+<div id="map" role="main" aria-label="Campus map"></div>
 
-<header class="topbar">
+<!-- Screen-reader announcements. Deliberately separate from the visible card:
+     the card's text is rewritten by a 30s refresh tick, and putting aria-live
+     on it meant the whole thing was re-announced every 30 seconds forever. -->
+<div id="sr-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+
+<header class="topbar" role="banner">
   <div class="topbar__title">
     <strong>ClassMapper</strong>
     <span class="topbar__sub">Tuskegee University</span>
@@ -21,6 +26,7 @@
   <div class="topbar__actions">
     <button id="btn-locate" class="icon-btn" title="Center on my location" aria-label="Center on my location">◎</button>
     <button id="btn-satellite" class="icon-btn" title="Toggle satellite view" aria-label="Toggle satellite view">▣</button>
+    <button id="btn-find" class="icon-btn" title="Find a building" aria-label="Find a building">⌕</button>
     <button id="btn-today" class="icon-btn" title="Today's schedule" aria-label="Today's schedule">▤</button>
     <button id="btn-classes" class="icon-btn" title="My classes" aria-label="My classes">✎</button>
     <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
@@ -45,7 +51,7 @@
 </div>
 
 <!-- Bottom card: the main "what's next" answer -->
-<section id="nextcard" class="nextcard" aria-live="polite">
+<section id="nextcard" class="nextcard">
   <button id="nextcard-toggle" class="nextcard__toggle" aria-expanded="true" aria-controls="nextcard-content">
     <span id="nextcard-toggle-summary" class="nextcard__toggle-summary">No classes yet</span>
     <span class="nextcard__toggle-chevron" aria-hidden="true">⌄</span>
@@ -94,12 +100,16 @@
 <div id="scrim" class="scrim" hidden></div>
 
 <!-- Today -->
-<aside id="panel-today" class="panel" hidden aria-labelledby="today-h">
+<aside id="panel-today" class="panel" role="dialog" aria-modal="true" hidden aria-labelledby="today-h">
   <div class="panel__head">
-    <h2 id="today-h">Today</h2>
+    <h2 id="today-h" tabindex="-1">Today</h2>
     <button class="icon-btn panel__close" data-close aria-label="Close">✕</button>
   </div>
   <div class="panel__body">
+    <fieldset class="days days--picker">
+      <legend>Day</legend>
+      <div class="days__row" id="day-picker-row"></div>
+    </fieldset>
     <div id="today-summary" class="summary"></div>
     <ol id="today-list" class="daylist"></ol>
     <button id="btn-route-day" class="btn btn--primary btn--block">Show whole day's route</button>
@@ -113,9 +123,9 @@
 </aside>
 
 <!-- Classes -->
-<aside id="panel-classes" class="panel" hidden aria-labelledby="classes-h">
+<aside id="panel-classes" class="panel" role="dialog" aria-modal="true" hidden aria-labelledby="classes-h">
   <div class="panel__head">
-    <h2 id="classes-h">My classes</h2>
+    <h2 id="classes-h" tabindex="-1">My classes</h2>
     <button class="icon-btn panel__close" data-close aria-label="Close">✕</button>
   </div>
   <div class="panel__body">
@@ -123,14 +133,17 @@
       <button id="btn-add" class="btn btn--primary">Add class</button>
       <button id="btn-import" class="btn">Import screenshot</button>
     </div>
+    <label id="class-search-wrap" hidden>Search
+      <input type="search" id="class-search" placeholder="Course, building, or room" autocomplete="off">
+    </label>
     <ul id="class-list" class="classlist"></ul>
   </div>
 </aside>
 
 <!-- Class editor -->
-<aside id="panel-edit" class="panel" hidden aria-labelledby="edit-h">
+<aside id="panel-edit" class="panel" role="dialog" aria-modal="true" hidden aria-labelledby="edit-h">
   <div class="panel__head">
-    <h2 id="edit-h">Add class</h2>
+    <h2 id="edit-h" tabindex="-1">Add class</h2>
     <button class="icon-btn panel__close" data-close aria-label="Close">✕</button>
   </div>
   <div class="panel__body">
@@ -178,9 +191,9 @@
 </aside>
 
 <!-- Import -->
-<aside id="panel-import" class="panel" hidden aria-labelledby="import-h">
+<aside id="panel-import" class="panel" role="dialog" aria-modal="true" hidden aria-labelledby="import-h">
   <div class="panel__head">
-    <h2 id="import-h">Import from screenshot</h2>
+    <h2 id="import-h" tabindex="-1">Import from screenshot</h2>
     <button class="icon-btn panel__close" data-close aria-label="Close">✕</button>
   </div>
   <div class="panel__body">
@@ -220,9 +233,9 @@
 </aside>
 
 <!-- Settings -->
-<aside id="panel-settings" class="panel" hidden aria-labelledby="settings-h">
+<aside id="panel-settings" class="panel" role="dialog" aria-modal="true" hidden aria-labelledby="settings-h">
   <div class="panel__head">
-    <h2 id="settings-h">Settings</h2>
+    <h2 id="settings-h" tabindex="-1">Settings</h2>
     <button class="icon-btn panel__close" data-close aria-label="Close">✕</button>
   </div>
   <div class="panel__body">
@@ -266,6 +279,38 @@
     </label>
     <button id="btn-test-notify" class="btn btn--sm">Send a test notification</button>
     <div id="notify-feedback" class="feedback"></div>
+
+    <hr>
+
+    <h3>Display</h3>
+    <p class="hint">Bigger text and stronger contrast help when you're reading this in direct sun.</p>
+    <label>Text size
+      <select id="input-textscale">
+        <option value="1">Normal</option>
+        <option value="1.15">Large</option>
+        <option value="1.3">Larger</option>
+      </select>
+    </label>
+    <label class="check">
+      <input type="checkbox" id="toggle-contrast"> High contrast
+    </label>
+
+    <hr>
+
+    <h3>Semester dates</h3>
+    <p class="hint">
+      Optional. Outside this range ClassMapper stops pointing you at classes that
+      aren't running yet, or are over.
+    </p>
+    <div class="row">
+      <label>Starts
+        <input type="date" id="input-semester-start">
+      </label>
+      <label>Ends
+        <input type="date" id="input-semester-end">
+      </label>
+    </div>
+    <div id="semester-feedback" class="feedback"></div>
 
     <hr>
 
@@ -335,7 +380,31 @@
   </div>
 </aside>
 
-<div id="toast" class="toast" hidden></div>
+<!-- One reusable modal, two modes. Native <dialog> gives focus trapping,
+     Escape handling and inert background for free — unlike prompt()/confirm(),
+     which some mobile browsers suppress outright. -->
+<dialog id="modal" class="modal">
+  <form method="dialog" class="modal__form">
+    <h2 id="modal-title" class="modal__title"></h2>
+    <p id="modal-message" class="modal__message"></p>
+
+    <div id="modal-picker" class="modal__picker" hidden>
+      <label for="modal-input" id="modal-input-label">Building</label>
+      <input id="modal-input" list="building-options" autocomplete="off" placeholder="Start typing…">
+      <div id="modal-feedback" class="feedback"></div>
+    </div>
+
+    <div class="row row--end modal__actions">
+      <button type="button" id="modal-cancel" class="btn">Cancel</button>
+      <button type="button" id="modal-confirm" class="btn btn--primary">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden>
+  <span id="toast-text"></span>
+  <button id="toast-action" class="toast__action" hidden></button>
+</div>
 
 <script src="vendor/leaflet/leaflet.js"></script>
 <script type="module" src="js/app.js"></script>

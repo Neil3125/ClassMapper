@@ -16,6 +16,27 @@
   --radius: 14px;
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
+  --focus: var(--gold);
+  --text-scale: 1;
+}
+
+/* High contrast: darker ink, pure-white ground, stronger lines and a deeper
+   crimson so text on it clears WCAG AA. Only the tokens change — no component
+   rule needs to know this mode exists. */
+html[data-contrast="high"] {
+  --crimson: #6b0f13;
+  --crimson-dark: #4d0a0d;
+  --gold: #8a6a00;
+  --gold-soft: #ffe9a8;
+  --ink: #000;
+  --ink-soft: #33302c;
+  --paper: #fff;
+  --line: #7a736b;
+  --good: #12603a;
+  --bad: #8f1710;
+  --warn: #6b4600;
+  --focus: #0b57d0;
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
 }
 
 * { box-sizing: border-box; }
@@ -24,11 +45,32 @@
    silently un-hides every panel. Keep this above everything else. */
 [hidden] { display: none !important; }
 
+/* Offscreen but still announced. Used by #sr-status. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* One ring for every interactive control. Previously only inputs/selects had
+   a focus style, so keyboard users had no idea where they were on any button. */
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.icon-btn:focus-visible { outline-offset: 1px; }
+
 html, body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font: calc(16px * var(--text-scale))/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: var(--ink);
   background: var(--paper);
   -webkit-text-size-adjust: 100%;
@@ -513,6 +555,54 @@ fieldset.days legend { font-size: 0.78rem; font-weight: 600; color: var(--ink-so
   text-align: center;
 }
 .toast.is-bad { background: var(--bad); }
+.toast__action {
+  appearance: none;
+  margin-left: 12px;
+  padding: 5px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 999px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.toast__action:hover { background: rgba(255, 255, 255, 0.16); }
+
+/* ---------- modal (replaces prompt/confirm) ---------- */
+
+.modal {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0;
+  max-width: min(420px, calc(100vw - 32px));
+  width: 100%;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+.modal::backdrop { background: rgba(26, 22, 19, 0.45); }
+.modal__form { padding: 16px; margin: 0; }
+.modal__title { margin: 0 0 6px; font-size: 1.05rem; color: var(--crimson); }
+.modal__message { margin: 0 0 12px; font-size: 0.9rem; color: var(--ink-soft); }
+.modal__message:empty { display: none; }
+.modal__picker label { display: block; }
+.modal__actions { margin-bottom: 0; }
+
+.days--picker { margin-bottom: 12px; }
+.day-chip[aria-pressed="true"].day-chip--today { outline: 2px solid var(--gold); outline-offset: 1px; }
+.day-chip--has { position: relative; }
+.day-chip--has::after {
+  content: '';
+  position: absolute;
+  bottom: 4px; left: 50%;
+  transform: translateX(-50%);
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+}
 
 @media (max-width: 480px) {
   .nextcard { max-height: 46vh; }

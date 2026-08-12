@@ -168,3 +168,70 @@ test('fmtDays joins registrar-style', () => {
   assert.equal(S.fmtDays(['T', 'R']), 'TR');
   assert.equal(S.fmtDays([]), '');
 });
+
+// --- semester range -------------------------------------------------------
+
+test('compareToDateString compares in LOCAL time, not UTC', () => {
+  // The whole point: `new Date('2026-08-12')` is midnight UTC, which is still
+  // Aug 11 anywhere west of Greenwich. These must agree regardless of zone.
+  assert.equal(S.compareToDateString(at(2026, 7, 12, 0, 5), '2026-08-12'), 0);
+  assert.equal(S.compareToDateString(at(2026, 7, 12, 23, 55), '2026-08-12'), 0);
+  assert.equal(S.compareToDateString(at(2026, 7, 11, 23, 55), '2026-08-12'), -1);
+  assert.equal(S.compareToDateString(at(2026, 7, 13, 0, 5), '2026-08-12'), 1);
+});
+
+test('compareToDateString rejects junk', () => {
+  assert.equal(S.compareToDateString(at(2026, 7, 12, 9, 0), ''), null);
+  assert.equal(S.compareToDateString(at(2026, 7, 12, 9, 0), '08/12/2026'), null);
+  assert.equal(S.compareToDateString(at(2026, 7, 12, 9, 0), undefined), null);
+});
+
+test('semesterPhase with no range set is always "in"', () => {
+  assert.equal(S.semesterPhase(at(2026, 7, 12, 9, 0), {}), 'in');
+  assert.equal(S.semesterPhase(at(2026, 7, 12, 9, 0), { semesterStart: '', semesterEnd: '' }), 'in');
+});
+
+test('semesterPhase bounds are inclusive on both ends', () => {
+  const range = { semesterStart: '2026-08-12', semesterEnd: '2026-12-04' };
+  assert.equal(S.semesterPhase(at(2026, 7, 11, 23, 0), range), 'before');
+  assert.equal(S.semesterPhase(at(2026, 7, 12, 0, 1), range), 'in');   // first day counts
+  assert.equal(S.semesterPhase(at(2026, 11, 4, 23, 0), range), 'in');  // last day counts
+  assert.equal(S.semesterPhase(at(2026, 11, 5, 0, 1), range), 'after');
+});
+
+test('nextClass returns null outside the semester', () => {
+  const before = { semesterStart: '2026-09-01' };
+  const after = { semesterEnd: '2026-08-01' };
+  assert.equal(S.nextClass(at(2026, 7, 12, 8, 0), ALL, before), null);
+  assert.equal(S.nextClass(at(2026, 7, 12, 8, 0), ALL, after), null);
+});
+
+test('a semester ending today still returns today\'s remaining classes', () => {
+  // The off-by-one this guards: an end date of "today" must not cut today off.
+  const range = { semesterEnd: '2026-08-12' };
+  const r = S.nextClass(at(2026, 7, 12, 8, 0), ALL, range);
+  assert.equal(r.cls.code, 'CS 101');
+  assert.equal(r.startsAt.getDate(), 12);
+});
+
+test('nextClass will not roll forward past the semester end', () => {
+  // Wednesday evening: normally rolls to Thursday's lab, but the term ends today.
+  const range = { semesterEnd: '2026-08-12' };
+  assert.equal(S.nextClass(at(2026, 7, 12, 18, 0), ALL, range), null);
+  // Without the range it does roll forward, proving the range is what stopped it.
+  assert.equal(S.nextClass(at(2026, 7, 12, 18, 0), ALL).cls.code, 'Bio Lab');
+});
+
+test('before the semester starts, there is no "next class" at all', () => {
+  // Deliberate: three days before term, "Semester hasn't started — classes
+  // begin Aug 17" is more useful than routing to a class 3 days out. The card
+  // renders that message off the null.
+  const range = { semesterStart: '2026-08-17' };
+  assert.equal(S.nextClass(at(2026, 7, 14, 8, 0), ALL, range), null);
+
+  // ...and on the first day of term it starts working immediately.
+  const r = S.nextClass(at(2026, 7, 17, 8, 0), ALL, range);
+  assert.equal(r.cls.code, 'CS 101');
+  assert.equal(r.startsAt.getDate(), 17);
+  assert.equal(r.startsAt.getDay(), 1);
+});

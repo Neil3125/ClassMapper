@@ -107,6 +107,28 @@ estimate and labels it as approximate.
   down to a one-line summary and see more of the map, or expand it back. Remembers
   your choice across reloads
 - **Backup / restore** — export your schedule as JSON (the API key is never included)
+- **Any day, not just today** — day chips in the Today panel switch between days, with a
+  dot marking days that have classes. The whole-day route follows the day you pick
+- **Find any building** — the ⌕ button routes you to any of the 53 campus buildings,
+  class or not (library, dining hall, an advisor's office)
+- **Search your classes** — filter by course, title, building, or room once you have
+  more than a few
+- **Undo delete** — deleting a class offers an Undo for 8 seconds
+- **Semester dates** — optional start/end in Settings, so classes stop showing as "next"
+  outside the term
+- **Text size & high contrast** — in Settings, for reading the screen in direct sun
+
+### Accessibility
+
+- All feedback is announced to screen readers via a dedicated live region that only
+  fires on genuine change — the 30-second refresh tick stays silent
+- Visible keyboard focus rings on every control
+- Panels are proper dialogs: focus moves in on open, is trapped while open, and returns
+  to whatever opened them on close
+- No native `prompt()`/`confirm()` anywhere — all replaced with keyboard-accessible
+  in-app dialogs (which also fixes pin-drop silently failing on mobile browsers that
+  suppress `prompt()`)
+- Both themes clear WCAG AA contrast; high contrast reaches 7.6:1–21:1
 
 ### Opening a route in another map app
 

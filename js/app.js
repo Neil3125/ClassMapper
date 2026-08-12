@@ -22,11 +22,16 @@ const state = {
   drafts: null,        // parsed import awaiting review
   editingId: null,
   routeToken: 0,       // guards against out-of-order route responses
+  panelOpener: null,   // element to hand focus back to when a panel closes
+  viewDay: null,       // day index being viewed in the Today panel; null = today
+  classFilter: '',     // class-list search text
+  findTarget: null,    // building being routed to from "Find a building"
 };
 
 // ---------- boot ----------
 
 async function boot() {
+  applyDisplaySettings(); // before anything paints, to avoid a theme flash
   M.init('map');
 
   try {
@@ -159,19 +164,33 @@ async function refresh() {
   }
 
   const now = new Date();
-  const next = S.nextClass(now, classes);
+  const cfg = store.settings();
+  const phase = S.semesterPhase(now, cfg);
+  const next = S.nextClass(now, classes, cfg);
   renderStopsForToday(now, next);
 
   if (!next) {
-    $('#next-label').textContent = 'Nothing left this week';
+    const headline =
+      phase === 'before'
+        ? "Semester hasn't started"
+        : phase === 'after'
+          ? "Semester's over"
+          : 'Nothing left this week';
+    $('#next-label').textContent = headline;
     $('#next-code').textContent = '—';
     $('#next-time').textContent = '';
-    $('#next-where').textContent = '';
+    $('#next-where').textContent =
+      phase === 'before'
+        ? `Classes begin ${cfg.semesterStart}.`
+        : phase === 'after'
+          ? `Classes ended ${cfg.semesterEnd}.`
+          : '';
     $('#next-walk').textContent = '';
     $('#next-leave').textContent = '';
     $('#next-steps').hidden = true;
     $('#next-openin').hidden = true;
-    updateCardSummary('Nothing left this week');
+    updateCardSummary(headline);
+    announce(headline);
     return;
   }
 
@@ -195,11 +214,17 @@ async function refresh() {
   const codeForSummary = next.cls.code || next.cls.title || 'Class';
   updateCardSummary(next.isNow ? `${codeForSummary} · now` : `${codeForSummary} · ${S.fmtTime(next.cls.startMin)}`);
 
+  // Every exit below must announce, or the live region goes stale and reports
+  // a class that is no longer next.
+  const codeForSr = next.cls.code || next.cls.title || 'Next class';
+  const whenForSr = `at ${S.fmtTime(next.cls.startMin)}`;
+
   if (!b) {
     $('#next-walk').textContent = '';
     $('#next-leave').textContent = '';
     $('#next-steps').hidden = true;
     setNote('Open My classes and pick a building so I can route you there.');
+    announce(`${codeForSr} ${whenForSr}. No building set, so no route.`);
     return;
   }
 
@@ -211,6 +236,7 @@ async function refresh() {
     $('#next-walk').textContent = 'Walk time needs your location';
     $('#next-leave').textContent = '';
     $('#next-steps').hidden = true;
+    announce(`${codeForSr} ${whenForSr}, ${b.name}. Walk time needs your location.`);
     return;
   }
 
@@ -226,8 +252,7 @@ async function refresh() {
   // stale just because you're looking at the whole day.
   if (!state.showingDay) M.drawRoute(route.shape);
 
-  const { bufferMin } = store.settings();
-  const leaveAt = S.leaveBy(next.startsAt, route.minutes, bufferMin);
+  const leaveAt = S.leaveBy(next.startsAt, route.minutes, cfg.bufferMin);
   const minsToLeave = Math.round((leaveAt - now) / 60000);
 
   $('#next-walk').textContent = route.samePlace
@@ -262,6 +287,20 @@ async function refresh() {
       : '',
   );
 
+  // Coarse buckets, not the live countdown: announcing "leave in 11 min" then
+  // "leave in 10 min" every tick would be worse than saying nothing.
+  const urgency = next.isNow
+    ? 'in progress'
+    : minsToLeave <= 0
+      ? 'leave now'
+      : minsToLeave <= 5
+        ? 'leave within 5 minutes'
+        : 'upcoming';
+  announce(
+    `${next.cls.code || next.cls.title || 'Next class'} at ${S.fmtTime(next.cls.startMin)}` +
+      `${b ? `, ${b.name}` : ''}. ${urgency === 'upcoming' ? `Leave by ${fmtClock(leaveAt)}` : urgency}.`,
+  );
+
   if (!next.isNow) {
     N.maybeAlert({ cls: next.cls, leaveAt, walkMin: route.minutes, buildingName: b.name }, now);
   }
@@ -278,6 +317,47 @@ function updateOpenInLinks(b) {
   $('#open-apple').href = EXT.appleMapsUrl(b);
   $('#open-waze').href = EXT.wazeUrl(b);
   openIn.hidden = false;
+}
+
+// ---------- find any building ----------
+
+/**
+ * Route to any campus building, whether or not a class meets there — the
+ * library, the dining hall, an advisor's office.
+ */
+async function findBuilding() {
+  const building = await pickBuilding('Find a building', 'Any of the 53 campus buildings.');
+  if (!building) return;
+
+  closePanels();
+  state.findTarget = building;
+  state.showingDay = false;
+  M.clearLegs();
+  $('#day-legend').hidden = true;
+
+  M.renderStops([
+    { building, label: '★', state: 'next', title: building.name, subtitle: 'Searched' },
+  ]);
+  M.panTo(building);
+
+  const origin = state.me;
+  if (!origin) {
+    toast(`${building.name} — turn on location for a walk time`);
+    announce(`Showing ${building.name} on the map`);
+    return;
+  }
+
+  toast(`Routing to ${building.name}…`);
+  const route = await R.walk(origin, building);
+  if (state.findTarget?.id !== building.id) return; // superseded by another search
+
+  M.drawRoute(route?.shape ?? []);
+  M.fitTo([origin, building]);
+  const summary = route
+    ? `${building.name} — ${route.minutes} min walk, ${R.fmtDistance(route.meters)}${route.approximate ? ' (estimated)' : ''}`
+    : building.name;
+  toast(summary);
+  announce(summary);
 }
 
 /** Keep the handle bar's one-line summary current, whether or not the card is collapsed. */
@@ -354,15 +434,64 @@ function renderStopsForToday(now, next) {
 
 // ---------- today panel ----------
 
+/**
+ * A Date for the day currently being viewed. `state.viewDay` is a day index
+ * (0-6); null means today. Always resolves forward, so on Wednesday picking
+ * "Monday" shows next Monday rather than a day that's already gone.
+ */
+function viewedDate(now = new Date()) {
+  if (state.viewDay == null) return now;
+  const offset = (state.viewDay - now.getDay() + 7) % 7;
+  const d = new Date(now);
+  d.setDate(d.getDate() + offset);
+  return d;
+}
+
+function dayHeading(date, now = new Date()) {
+  const offset = Math.round((startOfDay(date) - startOfDay(now)) / 86400000);
+  if (offset === 0) return 'Today';
+  if (offset === 1) return 'Tomorrow';
+  return S.DAY_NAMES[date.getDay()];
+}
+
+function renderDayPicker(now = new Date()) {
+  const row = $('#day-picker-row');
+  if (!row) return;
+  const classes = S.list();
+  const viewing = viewedDate(now).getDay();
+
+  row.innerHTML = S.DAY_LETTERS.map((d, i) => {
+    const has = S.classesOn(i, classes).length > 0;
+    return `<button type="button" class="day-chip ${i === now.getDay() ? 'day-chip--today' : ''} ${has ? 'day-chip--has' : ''}"
+      data-viewday="${i}" aria-pressed="${i === viewing}"
+      aria-label="${S.DAY_NAMES[i]}${has ? '' : ', no classes'}">${d}</button>`;
+  }).join('');
+
+  row.onclick = (e) => {
+    const chip = e.target.closest('[data-viewday]');
+    if (!chip) return;
+    const picked = Number(chip.dataset.viewday);
+    // Tapping the day you're already on goes back to today.
+    state.viewDay = picked === viewedDate(now).getDay() && picked !== now.getDay() ? null : picked;
+    renderToday();
+  };
+}
+
 function renderToday() {
   const now = new Date();
-  const plan = S.dayPlan(now);
+  const date = viewedDate(now);
+  const isToday = startOfDay(date).getTime() === startOfDay(now).getTime();
   const list = $('#today-list');
-  const next = S.nextClass(now);
+  const plan = S.dayPlan(date);
+  // A class on another day is never "next", so don't highlight it as such.
+  const next = isToday ? S.nextClass(now, S.list(), store.settings()) : null;
+
+  renderDayPicker(now);
+  $('#today-h').textContent = dayHeading(date, now);
 
   if (!plan.length) {
-    list.innerHTML = '<li class="is-gap">No classes today.</li>';
-    $('#today-summary').innerHTML = `<strong>${S.DAY_NAMES[now.getDay()]}</strong> — nothing scheduled. Enjoy it.`;
+    list.innerHTML = `<li class="is-gap">No classes ${isToday ? 'today' : `on ${S.DAY_NAMES[date.getDay()]}`}.</li>`;
+    $('#today-summary').innerHTML = `<strong>${S.DAY_NAMES[date.getDay()]}</strong> — nothing scheduled. Enjoy it.`;
     $('#btn-route-day').disabled = true;
     $('#btn-route-day-google').hidden = true;
     return;
@@ -388,11 +517,11 @@ function renderToday() {
     .join('');
 
   $('#today-summary').innerHTML =
-    `<strong>${S.DAY_NAMES[now.getDay()]}</strong> — ${classCount} class${classCount === 1 ? '' : 'es'}, ` +
+    `<strong>${S.DAY_NAMES[date.getDay()]}</strong> — ${classCount} class${classCount === 1 ? '' : 'es'}, ` +
     `${S.fmtTime(plan[0].cls.startMin)} to ${S.fmtTime([...plan].reverse().find((p) => p.type === 'class').cls.endMin)}.`;
   $('#btn-route-day').disabled = classCount < 2;
 
-  const stops = S.classesToday(now)
+  const stops = S.classesOn(date.getDay(), S.list())
     .map((c) => (c.buildingId ? B.get(c.buildingId) : null))
     .filter(Boolean);
   const dayGoogleBtn = $('#btn-route-day-google');
@@ -407,23 +536,25 @@ function renderToday() {
 
 async function showDayRoute() {
   const now = new Date();
-  const namedStops = S.classesToday(now)
+  const date = viewedDate(now);
+  const isToday = startOfDay(date).getTime() === startOfDay(now).getTime();
+  const namedStops = S.classesOn(date.getDay(), S.list())
     .map((c) => (c.buildingId ? { cls: c, point: B.get(c.buildingId) } : null))
     .filter(Boolean);
 
   if (namedStops.length < 2) {
-    toast('Need at least two classes with buildings today', true);
+    toast('Need at least two classes with buildings that day', true);
     return;
   }
 
   state.showingDay = true;
   M.clearRoute();
   closePanels();
-  toast('Routing your whole day…');
+  toast(`Routing ${isToday ? 'your whole day' : S.DAY_NAMES[date.getDay()]}…`);
 
-  // "You are here" has no class attached; every other point maps back to the
-  // class it's the location of, so each leg can be labeled by name.
-  const named = state.me
+  // Only start from your live position when the route is for today — on any
+  // other day where you're standing right now is irrelevant.
+  const named = state.me && isToday
     ? [{ cls: null, point: state.me }, ...namedStops]
     : namedStops;
   const points = named.map((n) => ({ lat: n.point.lat, lon: n.point.lon }));
@@ -527,16 +658,40 @@ function wireDayLegend() {
 
 // ---------- class list & editor ----------
 
+/** Does a class match the search box? Checks code, title, building and room. */
+function matchesFilter(cls, needle) {
+  if (!needle) return true;
+  const b = cls.buildingId ? B.get(cls.buildingId) : null;
+  return [cls.code, cls.title, cls.room, b?.name, cls.buildingRaw]
+    .filter(Boolean)
+    .some((v) => String(v).toLowerCase().includes(needle));
+}
+
 function renderClassList() {
   const classes = S.list();
   const ul = $('#class-list');
+
+  // The search box only earns its space once the list is long enough to need it.
+  const searchWrap = $('#class-search-wrap');
+  if (searchWrap) searchWrap.hidden = classes.length < 6;
+
   if (!classes.length) {
     ul.innerHTML = '<li class="is-gap">Nothing added yet.</li>';
     return;
   }
-  const sorted = [...classes].sort(
-    (a, b) => S.DAY_LETTERS.indexOf(a.days[0]) - S.DAY_LETTERS.indexOf(b.days[0]) || a.startMin - b.startMin,
-  );
+
+  const needle = state.classFilter.trim().toLowerCase();
+  const sorted = [...classes]
+    .filter((c) => matchesFilter(c, needle))
+    .sort(
+      (a, b) => S.DAY_LETTERS.indexOf(a.days[0]) - S.DAY_LETTERS.indexOf(b.days[0]) || a.startMin - b.startMin,
+    );
+
+  if (!sorted.length) {
+    ul.innerHTML = `<li class="is-gap">No classes match “${escapeHtml(state.classFilter.trim())}”.</li>`;
+    return;
+  }
+
   ul.innerHTML = sorted
     .map((c) => {
       const b = c.buildingId ? B.get(c.buildingId) : null;
@@ -700,13 +855,27 @@ function wireClassForm() {
     refresh();
   });
 
-  $('#btn-delete-class').onclick = () => {
+  $('#btn-delete-class').onclick = async () => {
     if (!state.editingId) return;
-    if (!confirm('Delete this class?')) return;
+    const removed = S.list().find((c) => c.id === state.editingId);
+    if (!removed) return;
+    if (!(await confirmDialog('Delete this class?', removed.code || 'This class', {
+      confirmLabel: 'Delete',
+      danger: true,
+    }))) return;
+
     S.remove(state.editingId);
     closePanels();
-    toast('Class deleted');
     refresh();
+    // Undo rather than a second are-you-sure: the delete is cheap to reverse.
+    toast(`Deleted ${removed.code || 'class'}`, false, {
+      label: 'Undo',
+      onClick: () => {
+        S.upsert(removed);
+        toast('Restored');
+        refresh();
+      },
+    });
   };
 }
 
@@ -847,11 +1016,16 @@ function renderReview(warnings = []) {
   };
 }
 
-function saveDrafts() {
+async function saveDrafts() {
   if (!state.drafts?.length) return;
   const missing = state.drafts.filter((c) => !c.buildingId).length;
-  if (missing && !confirm(`${missing} class${missing === 1 ? '' : 'es'} still have no building and won't be routable. Save anyway?`)) {
-    return;
+  if (missing) {
+    const ok = await confirmDialog(
+      'Save without buildings?',
+      `${missing} class${missing === 1 ? '' : 'es'} still ${missing === 1 ? 'has' : 'have'} no building, so I can't route you there.`,
+      { confirmLabel: 'Save anyway' },
+    );
+    if (!ok) return;
   }
 
   const existing = S.list();
@@ -879,6 +1053,18 @@ function saveDrafts() {
 }
 
 // ---------- settings ----------
+
+/**
+ * Text scale and contrast are just token overrides on <html>, so applying them
+ * before first paint avoids a flash of the default theme.
+ */
+function applyDisplaySettings() {
+  const { textScale, highContrast } = store.settings();
+  const root = document.documentElement;
+  root.style.setProperty('--text-scale', String(textScale ?? 1));
+  if (highContrast) root.setAttribute('data-contrast', 'high');
+  else root.removeAttribute('data-contrast');
+}
 
 function wireSettings() {
   $('#app-version').textContent = `ClassMapper v${APP_VERSION} · ${BUILD_DATE}`;
@@ -937,6 +1123,40 @@ function wireSettings() {
     }
   };
 
+  // --- display ---
+  $('#input-textscale').value = String(cfg.textScale ?? 1);
+  $('#toggle-contrast').checked = Boolean(cfg.highContrast);
+  $('#input-textscale').onchange = (e) => {
+    store.saveSettings({ textScale: Number(e.target.value) });
+    applyDisplaySettings();
+    M.invalidate(); // the card changed height, so the map's box did too
+  };
+  $('#toggle-contrast').onchange = (e) => {
+    store.saveSettings({ highContrast: e.target.checked });
+    applyDisplaySettings();
+  };
+
+  // --- semester range ---
+  $('#input-semester-start').value = cfg.semesterStart ?? '';
+  $('#input-semester-end').value = cfg.semesterEnd ?? '';
+  const onSemesterChange = () => {
+    const start = $('#input-semester-start').value;
+    const end = $('#input-semester-end').value;
+    const fb = $('#semester-feedback');
+    if (start && end && start > end) {
+      // Plain string compare is correct and safe for ISO YYYY-MM-DD.
+      fb.textContent = 'The end date is before the start date.';
+      fb.className = 'feedback feedback--bad';
+      return;
+    }
+    store.saveSettings({ semesterStart: start, semesterEnd: end });
+    fb.textContent = start || end ? 'Saved.' : 'No limit set — all classes always count.';
+    fb.className = 'feedback feedback--good';
+    refresh();
+  };
+  $('#input-semester-start').onchange = onSemesterChange;
+  $('#input-semester-end').onchange = onSemesterChange;
+
   $('#toggle-offline').checked = Boolean(cfg.offline);
   $('#toggle-offline').onchange = async (e) => {
     const fb = $('#offline-feedback');
@@ -983,11 +1203,9 @@ function wireSettings() {
     refresh();
   };
 
-  $('#btn-fix-pin').onclick = () => {
-    const name = prompt('Which building? (type part of its name)');
-    if (!name) return;
-    const { building } = B.match(name);
-    if (!building) return toast('No building matches that', true);
+  $('#btn-fix-pin').onclick = async () => {
+    const building = await pickBuilding('Move a building pin', 'Which building is in the wrong place?');
+    if (!building) return;
     closePanels();
     M.panTo(building);
     startPick(`Tap where “${building.name}” really is`, (pt) => {
@@ -998,13 +1216,19 @@ function wireSettings() {
     });
   };
 
-  $('#btn-add-building').onclick = () => {
-    const name = prompt('Name for the new building');
-    if (!name?.trim()) return;
+  $('#btn-add-building').onclick = async () => {
+    const chosenName = await openModal({
+      title: 'Add a missing building',
+      message: 'Name it, then tap its spot on the map.',
+      mode: 'text',
+      inputLabel: 'Building name',
+      confirmLabel: 'Next',
+    });
+    if (!chosenName) return;
     closePanels();
-    startPick(`Tap where “${name.trim()}” is`, (pt) => {
+    startPick(`Tap where “${chosenName}” is`, (pt) => {
       try {
-        const b = B.addCustom(name.trim(), pt);
+        const b = B.addCustom(chosenName, pt);
         toast(`Added ${b.name}`);
         buildBuildingOptions();
         refresh();
@@ -1074,7 +1298,12 @@ function wireSettings() {
   };
 
   $('#btn-wipe').onclick = async () => {
-    if (!confirm('Delete your classes, pins, key and settings from this device? This cannot be undone.')) return;
+    const ok = await confirmDialog(
+      'Delete everything?',
+      'Your classes, pin corrections, API key and settings will be removed from this device. This cannot be undone — export a backup first if you might want them back.',
+      { confirmLabel: 'Delete everything', danger: true },
+    );
+    if (!ok) return;
     for (const key of Object.values(store.KEYS)) store.remove(key);
     await clearAppCache();
     location.reload();
@@ -1195,28 +1424,77 @@ function startPick(message, onPick) {
 
 // ---------- panels & chrome ----------
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 function openPanel(sel) {
-  closePanels();
-  $(sel).hidden = false;
+  closePanels({ restoreFocus: false });
+  const panel = $(sel);
+  // Remember what opened this so focus can go back there on close — otherwise
+  // keyboard users land at the top of the document every time.
+  state.panelOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  panel.hidden = false;
   $('#scrim').hidden = false;
+
   if (sel === '#panel-import') showImportStage(state.drafts ? 'review' : 'start');
   if (sel === '#panel-settings') renderOverrides();
+
+  // Land on the heading rather than the first control, so the panel's purpose
+  // is announced before its options.
+  panel.querySelector('h2')?.focus();
 }
 
-function closePanels() {
+function closePanels({ restoreFocus = true } = {}) {
+  const wasOpen = $$('.panel').some((p) => !p.hidden);
   $$('.panel').forEach((p) => (p.hidden = true));
   $('#scrim').hidden = true;
+  if (wasOpen && restoreFocus && state.panelOpener?.isConnected) state.panelOpener.focus();
+  if (wasOpen) state.panelOpener = null;
+}
+
+function openPanelEl() {
+  return $$('.panel').find((p) => !p.hidden) ?? null;
 }
 
 function wirePanels() {
-  $('#scrim').onclick = closePanels;
-  $$('[data-close]').forEach((b) => (b.onclick = closePanels));
+  $('#scrim').onclick = () => closePanels();
+  $$('[data-close]').forEach((b) => (b.onclick = () => closePanels()));
+
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      // <dialog> handles its own Escape; don't close the panel underneath it too.
+      if ($('#modal').open) return;
       closePanels();
       M.cancelPick();
       $('#pick-banner').hidden = true;
       if (state.showingDay) exitDayRoute();
+      return;
+    }
+
+    // Trap Tab inside an open panel — it used to escape into the map behind it,
+    // leaving keyboard users tabbing through an interface they can't see.
+    if (e.key !== 'Tab') return;
+    const panel = openPanelEl();
+    if (!panel) return;
+
+    const items = [...panel.querySelectorAll(FOCUSABLE)].filter(
+      (el) => el.offsetParent !== null || el === document.activeElement,
+    );
+    if (!items.length) return;
+
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement;
+
+    if (!panel.contains(active)) {
+      e.preventDefault();
+      (e.shiftKey ? last : first).focus();
+    } else if (e.shiftKey && active === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
     }
   });
 }
@@ -1226,11 +1504,17 @@ function wireTopbar() {
     renderToday();
     openPanel('#panel-today');
   };
+  $('#class-search').oninput = (e) => {
+    state.classFilter = e.target.value;
+    renderClassList();
+  };
+
   $('#btn-classes').onclick = () => {
     renderClassList();
     openPanel('#panel-classes');
   };
   $('#btn-settings').onclick = () => openPanel('#panel-settings');
+  $('#btn-find').onclick = findBuilding;
   $('#btn-add').onclick = () => openEditor(null);
   $('#btn-add-empty').onclick = () => openEditor(null);
   $('#btn-import').onclick = () => openPanel('#panel-import');
@@ -1252,13 +1536,50 @@ function wireTopbar() {
 // ---------- helpers ----------
 
 let toastTimer;
-function toast(msg, bad = false) {
+/**
+ * Transient feedback. `action` optionally adds a button ({ label, onClick }),
+ * used for Undo after a delete.
+ * The element carries role="status"/aria-live, so this is also how screen
+ * reader users hear about saves and errors — it used to be silent to them.
+ */
+function toast(msg, bad = false, action = null) {
   const el = $('#toast');
-  el.textContent = msg;
+  const btn = $('#toast-action');
+  $('#toast-text').textContent = msg;
   el.className = 'toast' + (bad ? ' is-bad' : '');
+  // Errors interrupt; routine confirmations wait their turn.
+  el.setAttribute('role', bad ? 'alert' : 'status');
+  el.setAttribute('aria-live', bad ? 'assertive' : 'polite');
+
+  if (action) {
+    btn.textContent = action.label;
+    btn.hidden = false;
+    btn.onclick = () => {
+      el.hidden = true;
+      clearTimeout(toastTimer);
+      action.onClick();
+    };
+  } else {
+    btn.hidden = true;
+    btn.onclick = null;
+  }
+
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (el.hidden = true), bad ? 5200 : 3200);
+  toastTimer = setTimeout(() => (el.hidden = true), action ? 8000 : bad ? 5200 : 3200);
+}
+
+/**
+ * Announce a state change to screen readers, and only when it actually
+ * changed — the 30s refresh tick calls this constantly with identical text,
+ * and rewriting a live region re-announces it every single time.
+ */
+let lastAnnounced = '';
+function announce(msg) {
+  const text = String(msg ?? '').trim();
+  if (!text || text === lastAnnounced) return;
+  lastAnnounced = text;
+  $('#sr-status').textContent = text;
 }
 
 function setNote(msg) {
@@ -1266,6 +1587,111 @@ function setNote(msg) {
   el.textContent = msg ?? '';
   el.hidden = !msg;
 }
+
+// ---------- modal (replaces prompt/confirm) ----------
+
+/**
+ * Native <dialog> handles focus trapping, Escape, and inerting the background
+ * for us. It also works where prompt()/confirm() don't: some mobile browsers
+ * suppress those outright, which used to make pin-drop silently do nothing.
+ * Resolves to `false`/`null` on cancel.
+ */
+function openModal({
+  title,
+  message = '',
+  mode = 'confirm',        // 'confirm' | 'picker' (must match a building) | 'text' (free text)
+  confirmLabel = 'OK',
+  danger = false,
+  initial = '',
+  inputLabel = 'Building',
+}) {
+  const dlg = $('#modal');
+  const picker = $('#modal-picker');
+  const input = $('#modal-input');
+  const confirmBtn = $('#modal-confirm');
+  const feedback = $('#modal-feedback');
+
+  $('#modal-title').textContent = title;
+  $('#modal-message').textContent = message;
+  confirmBtn.textContent = confirmLabel;
+  confirmBtn.className = 'btn ' + (danger ? 'btn--danger' : 'btn--primary');
+
+  const isPicker = mode === 'picker';
+  const isText = mode === 'text';
+  const wantsInput = isPicker || isText;
+
+  picker.hidden = !wantsInput;
+  $('#modal-input-label').textContent = inputLabel;
+  // Only the picker should autocomplete against known buildings; naming a new
+  // one shouldn't suggest the names it can't be.
+  if (isPicker) input.setAttribute('list', 'building-options');
+  else input.removeAttribute('list');
+  input.value = initial;
+  feedback.textContent = '';
+  feedback.className = 'feedback';
+
+  const emptyResult = wantsInput ? null : false;
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      input.oninput = null;
+      dlg.close();
+      resolve(value);
+    };
+
+    if (isPicker) {
+      // Live "→ matched building" feedback, same matcher the class form uses.
+      input.oninput = () => {
+        const val = input.value.trim();
+        if (!val) {
+          feedback.textContent = '';
+          feedback.className = 'feedback';
+          return;
+        }
+        const { building } = B.match(val);
+        feedback.textContent = building ? `→ ${building.name}` : 'No building matches that yet';
+        feedback.className = 'feedback ' + (building ? 'feedback--good' : 'feedback--bad');
+      };
+    }
+
+    confirmBtn.onclick = () => {
+      if (mode === 'confirm') return finish(true);
+
+      const raw = input.value.trim();
+      if (!raw) {
+        feedback.textContent = isPicker ? 'Pick a building from the list first.' : 'Enter a name first.';
+        feedback.className = 'feedback feedback--bad';
+        input.focus();
+        return;
+      }
+      if (isText) return finish(raw);
+
+      const { building } = B.match(raw);
+      if (!building) {
+        feedback.textContent = 'No building matches that. Check the spelling.';
+        feedback.className = 'feedback feedback--bad';
+        input.focus();
+        return;
+      }
+      finish(building);
+    };
+    $('#modal-cancel').onclick = () => finish(emptyResult);
+    // Covers Escape, which fires `close` without going through our buttons.
+    dlg.addEventListener('close', () => finish(emptyResult), { once: true });
+
+    dlg.showModal();
+    (wantsInput ? input : confirmBtn).focus();
+  });
+}
+
+const confirmDialog = (title, message, opts = {}) =>
+  openModal({ title, message, mode: 'confirm', confirmLabel: opts.confirmLabel ?? 'Confirm', danger: opts.danger });
+
+const pickBuilding = (title, message = '') =>
+  openModal({ title, message, mode: 'picker', confirmLabel: 'Select' });
 
 function fmtClock(date) {
   const h24 = date.getHours();
