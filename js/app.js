@@ -15,8 +15,9 @@ const $$ = (sel) => [...document.querySelectorAll(sel)];
 const state = {
   me: null,            // {lat, lon, accuracy} from geolocation
   route: null,         // current route to next class
-  dayRoute: null,      // whole-day route, when shown
   showingDay: false,
+  dayLegs: null,       // [{fromLabel, toLabel, meters, minutes, shape, approximate}], when shown
+  dayLegVisible: [],   // bool per leg, parallel to dayLegs
   drafts: null,        // parsed import awaiting review
   editingId: null,
   routeToken: 0,       // guards against out-of-order route responses
@@ -44,6 +45,7 @@ async function boot() {
     ['class form', wireClassForm],
     ['import', wireImport],
     ['settings', wireSettings],
+    ['day route legend', wireDayLegend],
   ]) {
     try {
       fn();
@@ -205,8 +207,6 @@ async function refresh() {
     return;
   }
 
-  if (state.showingDay) return; // day route owns the map right now
-
   const token = ++state.routeToken;
   const route = await R.walk(origin, b);
   if (token !== state.routeToken) return; // a newer refresh already won
@@ -214,7 +214,10 @@ async function refresh() {
   state.route = route;
   if (!route) return;
 
-  M.drawRoute(route.shape);
+  // The day-route legend owns the map while it's open — leave its lines alone,
+  // but keep computing walk time and leave-by below so the card doesn't go
+  // stale just because you're looking at the whole day.
+  if (!state.showingDay) M.drawRoute(route.shape);
 
   const { bufferMin } = store.settings();
   const leaveAt = S.leaveBy(next.startsAt, route.minutes, bufferMin);
@@ -376,35 +379,122 @@ function renderToday() {
 
 async function showDayRoute() {
   const now = new Date();
-  const stops = S.classesToday(now)
-    .map((c) => (c.buildingId ? B.get(c.buildingId) : null))
+  const namedStops = S.classesToday(now)
+    .map((c) => (c.buildingId ? { cls: c, point: B.get(c.buildingId) } : null))
     .filter(Boolean);
 
-  if (stops.length < 2) {
-    toast('Need at least two classes with buildings today');
+  if (namedStops.length < 2) {
+    toast('Need at least two classes with buildings today', true);
     return;
   }
 
   state.showingDay = true;
+  M.clearRoute();
   closePanels();
   toast('Routing your whole day…');
 
-  const points = (state.me ? [state.me, ...stops] : stops).map((p) => ({ lat: p.lat, lon: p.lon }));
-  const result = await R.chain(points);
+  // "You are here" has no class attached; every other point maps back to the
+  // class it's the location of, so each leg can be labeled by name.
+  const named = state.me
+    ? [{ cls: null, point: state.me }, ...namedStops]
+    : namedStops;
+  const points = named.map((n) => ({ lat: n.point.lat, lon: n.point.lon }));
 
-  const shape = result.legs.flatMap((l) => l?.shape ?? []);
-  M.drawRoute(shape);
+  const result = await R.chain(points);
+  if (!state.showingDay) return; // closed while the routing call was in flight
+
+  const labelFor = (pt) => {
+    const match = named.find((n) => Math.abs(n.point.lat - pt.lat) < 1e-6 && Math.abs(n.point.lon - pt.lon) < 1e-6);
+    return match?.cls ? match.cls.code || match.cls.title || 'Class' : 'You are here';
+  };
+
+  state.dayLegs = result.legs.map((leg, i) => ({
+    fromLabel: labelFor(result.stops[i]),
+    toLabel: labelFor(result.stops[i + 1]),
+    meters: leg?.meters ?? 0,
+    minutes: leg?.minutes ?? 0,
+    shape: leg?.shape ?? [],
+    approximate: leg?.approximate ?? false,
+  }));
+  state.dayLegVisible = state.dayLegs.map(() => true);
+
+  M.drawLegs(state.dayLegs);
   M.fitTo(points);
+  renderDayLegend();
 
   toast(
     `Whole day: ${R.fmtDistance(result.meters)} of walking, about ${fmtDuration(result.minutes)}` +
       (result.approximate ? ' (estimated)' : ''),
   );
+}
 
-  // Hand the map back to the next-class view on the following tick.
-  setTimeout(() => {
-    state.showingDay = false;
-  }, 60_000);
+function exitDayRoute() {
+  state.showingDay = false;
+  state.dayLegs = null;
+  state.dayLegVisible = [];
+  M.clearLegs();
+  $('#day-legend').hidden = true;
+  refresh();
+}
+
+function renderDayLegend() {
+  const box = $('#day-legend');
+  if (!state.dayLegs?.length) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+
+  const allVisible = state.dayLegVisible.every(Boolean);
+  const soloIndex = !allVisible && state.dayLegVisible.filter(Boolean).length === 1
+    ? state.dayLegVisible.indexOf(true)
+    : -1;
+
+  $('#day-legend-list').innerHTML = state.dayLegs
+    .map((leg, i) => {
+      const visible = state.dayLegVisible[i];
+      const solo = i === soloIndex;
+      return `<li class="dayleg ${visible ? '' : 'is-off'} ${solo ? 'is-solo' : ''}" data-leg="${i}">
+        <input type="checkbox" class="dayleg__check" data-toggle="${i}" ${visible ? 'checked' : ''}
+               aria-label="Show ${escapeHtml(leg.fromLabel)} to ${escapeHtml(leg.toLabel)} on the map">
+        <button type="button" class="dayleg__label" data-solo="${i}">${escapeHtml(leg.fromLabel)} → ${escapeHtml(leg.toLabel)}</button>
+        <span class="dayleg__meta">${leg.minutes} min${leg.approximate ? ' ~' : ''}</span>
+      </li>`;
+    })
+    .join('');
+}
+
+function wireDayLegend() {
+  const list = $('#day-legend-list');
+
+  list.addEventListener('change', (e) => {
+    const cb = e.target.closest('input[data-toggle]');
+    if (!cb) return;
+    const i = Number(cb.dataset.toggle);
+    state.dayLegVisible[i] = cb.checked;
+    M.setLegVisible(i, cb.checked);
+    renderDayLegend();
+  });
+
+  list.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-solo]');
+    if (!btn) return;
+    const i = Number(btn.dataset.solo);
+
+    // Tapping the only visible leg again restores the full route.
+    const alreadySolo = state.dayLegVisible[i] && state.dayLegVisible.filter(Boolean).length === 1;
+    state.dayLegVisible = state.dayLegVisible.map((_, idx) => (alreadySolo ? true : idx === i));
+    state.dayLegVisible.forEach((v, idx) => M.setLegVisible(idx, v));
+    renderDayLegend();
+  });
+
+  $('#day-legend-showall').onclick = () => {
+    state.dayLegVisible = state.dayLegs.map(() => true);
+    state.dayLegVisible.forEach((v, i) => M.setLegVisible(i, v));
+    renderDayLegend();
+  };
+
+  $('#day-legend-close').onclick = exitDayRoute;
 }
 
 // ---------- class list & editor ----------
@@ -1029,6 +1119,7 @@ function wirePanels() {
       closePanels();
       M.cancelPick();
       $('#pick-banner').hidden = true;
+      if (state.showingDay) exitDayRoute();
     }
   });
 }

@@ -125,6 +125,34 @@ export function clearRoute() {
   drawRoute(null);
 }
 
+// Separate layer set from the single next-class route above, so the whole-day
+// view can show, hide, or solo individual legs without disturbing it.
+let legLayers = [];
+
+/** Draw the day route as one polyline per leg, so each can be toggled on its own. */
+export function drawLegs(legs) {
+  clearLegs();
+  legLayers = legs.map((leg) => {
+    if (!leg?.shape?.length) return null;
+    return L.polyline(leg.shape, {
+      className: 'cm-route',
+      weight: 5,
+      opacity: 0.9,
+      lineJoin: 'round',
+      lineCap: 'round',
+    }).addTo(map);
+  });
+}
+
+export function clearLegs() {
+  legLayers.forEach((l) => l && map.removeLayer(l));
+  legLayers = [];
+}
+
+export function setLegVisible(i, visible) {
+  legLayers[i]?.setStyle({ opacity: visible ? 0.9 : 0 });
+}
+
 export function showMe(lat, lon, accuracy) {
   if (!meMarker) {
     meMarker = L.circleMarker([lat, lon], {

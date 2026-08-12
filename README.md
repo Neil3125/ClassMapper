@@ -93,7 +93,10 @@ estimate and labels it as approximate.
 
 - **Next class card** — course, time, building, room, walk time, and a leave-by time
 - **Turn-by-turn directions** along actual campus walkways
-- **Full-day route** — chains every class today, with total distance and free gaps
+- **Full-day route** — chains every class today, with total distance and free gaps.
+  Each leg between two classes can be shown or hidden with its checkbox, or tap a
+  leg's name to solo just that one — so a busy day doesn't have to be one tangled
+  line on the map
 - **Open in Google Maps / Apple Maps / Waze** — hand the current route off to whatever
   map app you actually navigate with. Works from the next-class card, from any class
   in your list, and for the whole day (Google Maps only — see below)

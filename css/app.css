@@ -93,6 +93,63 @@ html, body {
   max-width: calc(100% - 24px);
 }
 
+/* ---------- day route legend ---------- */
+
+.day-legend {
+  position: absolute;
+  top: calc(56px + var(--safe-t) + 8px);
+  left: 10px; right: 10px;
+  z-index: 550;
+  max-width: 560px;
+  margin: 0 auto;
+  background: rgba(251, 249, 246, 0.97);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 10px 12px;
+  max-height: 42vh;
+  overflow-y: auto;
+}
+
+.day-legend__head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 6px;
+}
+.day-legend__title { font-weight: 700; font-size: 0.85rem; color: var(--crimson); }
+.day-legend__actions { display: flex; align-items: center; gap: 4px; }
+.day-legend__actions .icon-btn {
+  width: 30px; height: 30px; font-size: 0.85rem;
+  background: #efe9e0; color: var(--ink); border-color: var(--line);
+}
+.day-legend__actions .icon-btn:hover { background: #e6dfd4; }
+
+.dayleg-list { list-style: none; margin: 0; padding: 0; }
+.dayleg {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--line);
+}
+.dayleg:last-child { border-bottom: none; }
+.dayleg__check { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--crimson); }
+.dayleg__label {
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 8px 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font: inherit;
+  font-size: 0.83rem;
+  color: var(--ink);
+  cursor: pointer;
+}
+.dayleg.is-off .dayleg__label { color: var(--ink-soft); text-decoration: line-through; }
+.dayleg.is-solo .dayleg__label { font-weight: 700; color: var(--crimson); }
+.dayleg__meta { font-size: 0.76rem; color: var(--ink-soft); white-space: nowrap; }
+
 /* ---------- bottom card ---------- */
 
 .nextcard {

@@ -32,6 +32,18 @@
   <button id="pick-cancel" class="btn btn--ghost btn--sm">Cancel</button>
 </div>
 
+<!-- Whole-day route legend: toggle legs on/off, or tap one to solo it -->
+<div id="day-legend" class="day-legend" hidden>
+  <div class="day-legend__head">
+    <span class="day-legend__title">Today's route</span>
+    <div class="day-legend__actions">
+      <button id="day-legend-showall" class="btn btn--ghost btn--sm">Show all</button>
+      <button id="day-legend-close" class="icon-btn" aria-label="Close route view">✕</button>
+    </div>
+  </div>
+  <ul id="day-legend-list" class="dayleg-list"></ul>
+</div>
+
 <!-- Bottom card: the main "what's next" answer -->
 <section id="nextcard" class="nextcard" aria-live="polite">
   <div class="nextcard__empty" id="nextcard-empty">
