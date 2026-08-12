@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#8f1d21">
+<title>ClassMapper — Tuskegee</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<div id="map" aria-label="Campus map"></div>
+
+<header class="topbar">
+  <div class="topbar__title">
+    <strong>ClassMapper</strong>
+    <span class="topbar__sub">Tuskegee University</span>
+  </div>
+  <div class="topbar__actions">
+    <button id="btn-locate" class="icon-btn" title="Center on my location" aria-label="Center on my location">◎</button>
+    <button id="btn-satellite" class="icon-btn" title="Toggle satellite view" aria-label="Toggle satellite view">▣</button>
+    <button id="btn-today" class="icon-btn" title="Today's schedule" aria-label="Today's schedule">▤</button>
+    <button id="btn-classes" class="icon-btn" title="My classes" aria-label="My classes">✎</button>
+    <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
+  </div>
+</header>
+
+<div id="pick-banner" class="pick-banner" hidden>
+  <span id="pick-text">Tap the map to place the pin</span>
+  <button id="pick-cancel" class="btn btn--ghost btn--sm">Cancel</button>
+</div>
+
+<!-- Bottom card: the main "what's next" answer -->
+<section id="nextcard" class="nextcard" aria-live="polite">
+  <div class="nextcard__empty" id="nextcard-empty">
+    <h2>No classes yet</h2>
+    <p>Import a screenshot of your schedule, or add classes by hand.</p>
+    <div class="row">
+      <button id="btn-import-empty" class="btn btn--primary">Import screenshot</button>
+      <button id="btn-add-empty" class="btn">Add manually</button>
+    </div>
+  </div>
+
+  <div class="nextcard__body" id="nextcard-body" hidden>
+    <div class="nextcard__label" id="next-label">Next class</div>
+    <div class="nextcard__course">
+      <span id="next-code">—</span>
+      <span class="nextcard__time" id="next-time"></span>
+    </div>
+    <div class="nextcard__where" id="next-where"></div>
+    <div class="nextcard__walk">
+      <span id="next-walk" class="pill"></span>
+      <span id="next-leave" class="pill pill--accent"></span>
+    </div>
+    <div class="nextcard__note" id="next-note" hidden></div>
+    <details class="steps" id="next-steps" hidden>
+      <summary>Walking directions</summary>
+      <ol id="next-steps-list"></ol>
+    </details>
+  </div>
+</section>
+
+<!-- ===== Panels ===== -->
+
+<div id="scrim" class="scrim" hidden></div>
+
+<!-- Today -->
+<aside id="panel-today" class="panel" hidden aria-labelledby="today-h">
+  <div class="panel__head">
+    <h2 id="today-h">Today</h2>
+    <button class="icon-btn panel__close" data-close aria-label="Close">✕</button>
+  </div>
+  <div class="panel__body">
+    <div id="today-summary" class="summary"></div>
+    <ol id="today-list" class="daylist"></ol>
+    <button id="btn-route-day" class="btn btn--primary btn--block">Show whole day's route</button>
+  </div>
+</aside>
+
+<!-- Classes -->
+<aside id="panel-classes" class="panel" hidden aria-labelledby="classes-h">
+  <div class="panel__head">
+    <h2 id="classes-h">My classes</h2>
+    <button class="icon-btn panel__close" data-close aria-label="Close">✕</button>
+  </div>
+  <div class="panel__body">
+    <div class="row">
+      <button id="btn-add" class="btn btn--primary">Add class</button>
+      <button id="btn-import" class="btn">Import screenshot</button>
+    </div>
+    <ul id="class-list" class="classlist"></ul>
+  </div>
+</aside>
+
+<!-- Class editor -->
+<aside id="panel-edit" class="panel" hidden aria-labelledby="edit-h">
+  <div class="panel__head">
+    <h2 id="edit-h">Add class</h2>
+    <button class="icon-btn panel__close" data-close aria-label="Close">✕</button>
+  </div>
+  <div class="panel__body">
+    <form id="form-class" novalidate>
+      <input type="hidden" name="id">
+      <label>Course code
+        <input name="code" placeholder="CS 101" required autocomplete="off">
+      </label>
+      <label>Title <span class="hint">optional</span>
+        <input name="title" placeholder="Intro to Computer Science" autocomplete="off">
+      </label>
+
+      <fieldset class="days">
+        <legend>Days</legend>
+        <div class="days__row" id="days-row"></div>
+      </fieldset>
+
+      <div class="row">
+        <label>Start
+          <input name="start" placeholder="9:00 AM" required autocomplete="off">
+        </label>
+        <label>End
+          <input name="end" placeholder="9:50 AM" required autocomplete="off">
+        </label>
+      </div>
+
+      <label>Building
+        <input name="building" list="building-options" placeholder="Start typing…" autocomplete="off" required>
+        <datalist id="building-options"></datalist>
+      </label>
+      <div id="building-feedback" class="feedback"></div>
+
+      <label>Room <span class="hint">optional</span>
+        <input name="room" placeholder="204" autocomplete="off">
+      </label>
+
+      <div id="form-error" class="feedback feedback--bad" hidden></div>
+
+      <div class="row row--end">
+        <button type="button" id="btn-delete-class" class="btn btn--danger" hidden>Delete</button>
+        <button type="submit" class="btn btn--primary">Save class</button>
+      </div>
+    </form>
+  </div>
+</aside>
+
+<!-- Import -->
+<aside id="panel-import" class="panel" hidden aria-labelledby="import-h">
+  <div class="panel__head">
+    <h2 id="import-h">Import from screenshot</h2>
+    <button class="icon-btn panel__close" data-close aria-label="Close">✕</button>
+  </div>
+  <div class="panel__body">
+    <div id="import-nokey" class="feedback feedback--warn" hidden>
+      Add your free Gemini API key in Settings first, then come back here.
+      <button id="btn-goto-settings" class="btn btn--sm">Open Settings</button>
+    </div>
+
+    <div id="import-start">
+      <label id="dropzone" class="dropzone" tabindex="0">
+        <input type="file" id="file-input" accept="image/*" hidden>
+        <span class="dropzone__icon">▤</span>
+        <span><strong>Choose a screenshot</strong></span>
+        <span class="hint">or drag one here, or paste with Ctrl+V</span>
+      </label>
+      <p class="hint">
+        Your image is sent to Google's Gemini API using your own key, only when you pick a file.
+        Your schedule is stored on this device only.
+      </p>
+    </div>
+
+    <div id="import-busy" class="busy" hidden>
+      <div class="spinner"></div>
+      <p>Reading your schedule…</p>
+    </div>
+
+    <div id="import-review" hidden>
+      <div id="import-warnings"></div>
+      <p class="hint">Check these before saving. Anything in red needs a building.</p>
+      <ul id="review-list" class="classlist"></ul>
+      <div class="row row--end">
+        <button id="btn-review-cancel" class="btn">Discard</button>
+        <button id="btn-review-save" class="btn btn--primary">Save classes</button>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- Settings -->
+<aside id="panel-settings" class="panel" hidden aria-labelledby="settings-h">
+  <div class="panel__head">
+    <h2 id="settings-h">Settings</h2>
+    <button class="icon-btn panel__close" data-close aria-label="Close">✕</button>
+  </div>
+  <div class="panel__body">
+    <h3>Gemini API key</h3>
+    <p class="hint">
+      Free from <strong>aistudio.google.com/apikey</strong> — no credit card needed.
+      Used only to read schedule screenshots. Stored on this device.
+    </p>
+    <label>Key
+      <input type="password" id="input-key" placeholder="AIza…" autocomplete="off">
+    </label>
+    <div class="row">
+      <button id="btn-save-key" class="btn btn--primary btn--sm">Save key</button>
+      <button id="btn-test-key" class="btn btn--sm">Test key</button>
+      <button id="btn-clear-key" class="btn btn--danger btn--sm">Clear</button>
+    </div>
+    <div id="key-feedback" class="feedback"></div>
+
+    <hr>
+
+    <h3>Leave-by alerts</h3>
+    <p class="hint">Notifies you when it's time to walk. Only fires while this app is open.</p>
+    <label class="check">
+      <input type="checkbox" id="toggle-notify"> Enable notifications
+    </label>
+    <label>Extra buffer before leaving
+      <select id="input-buffer">
+        <option value="0">No buffer</option>
+        <option value="3">3 minutes</option>
+        <option value="5">5 minutes</option>
+        <option value="10">10 minutes</option>
+        <option value="15">15 minutes</option>
+      </select>
+    </label>
+    <label>Walking pace
+      <select id="input-speed">
+        <option value="1.1">Relaxed</option>
+        <option value="1.35">Average</option>
+        <option value="1.6">Brisk</option>
+      </select>
+    </label>
+    <button id="btn-test-notify" class="btn btn--sm">Send a test notification</button>
+    <div id="notify-feedback" class="feedback"></div>
+
+    <hr>
+
+    <h3>Buildings</h3>
+    <p class="hint">
+      <span id="building-count">—</span> Tuskegee buildings from OpenStreetMap. Pins are building
+      centres, so nudge any that aren't quite right.
+    </p>
+    <div class="row">
+      <button id="btn-fix-pin" class="btn btn--sm">Move a building's pin</button>
+      <button id="btn-add-building" class="btn btn--sm">Add a missing building</button>
+    </div>
+    <div id="building-feedback2" class="feedback"></div>
+    <div id="override-list" class="overrides"></div>
+
+    <hr>
+
+    <h3>Your data</h3>
+    <p class="hint">Everything lives in this browser. Back it up before clearing your browser data.</p>
+    <div class="row">
+      <button id="btn-export" class="btn btn--sm">Export backup</button>
+      <label class="btn btn--sm">Import backup
+        <input type="file" id="file-restore" accept="application/json" hidden>
+      </label>
+      <button id="btn-wipe" class="btn btn--danger btn--sm">Delete everything</button>
+    </div>
+    <div id="data-feedback" class="feedback"></div>
+
+    <hr>
+    <p class="hint">
+      Map data © OpenStreetMap contributors (ODbL). Routing by FOSSGIS Valhalla.
+      Satellite imagery © Esri.
+    </p>
+  </div>
+</aside>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

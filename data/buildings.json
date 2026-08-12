@@ -1,0 +1,556 @@
+{
+  "generated": "2026-08-12",
+  "attribution": "© OpenStreetMap contributors, ODbL",
+  "bbox": "32.418,-85.715,32.437,-85.690",
+  "buildings": [
+    {
+      "id": "alexander-m-white-hall",
+      "name": "Alexander M. White Hall",
+      "lat": 32.429686,
+      "lon": -85.705271,
+      "aliases": [
+        "White Hall",
+        "White"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "andrew-carnegie-hall",
+      "name": "Andrew Carnegie Hall",
+      "lat": 32.428725,
+      "lon": -85.705529,
+      "aliases": [
+        "Carnegie",
+        "Carnegie Hall"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "andrew-f-brimmer-college-of-business-and-information-sciences",
+      "name": "Andrew F. Brimmer College of Business and Information Sciences",
+      "lat": 32.427024,
+      "lon": -85.702218,
+      "aliases": [
+        "Brimmer",
+        "Brimmer Hall",
+        "Business",
+        "College of Business",
+        "Computer Science",
+        "CS",
+        "BRIM"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "armstrong-science-hall",
+      "name": "Armstrong Science Hall",
+      "lat": 32.426905,
+      "lon": -85.703754,
+      "aliases": [
+        "Armstrong",
+        "Science Hall",
+        "Chemistry",
+        "Physics",
+        "ARMS"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "band-cottage",
+      "name": "Band Cottage",
+      "lat": 32.42683,
+      "lon": -85.702514,
+      "aliases": [
+        "Band",
+        "Music"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "basil-oconnor-hall",
+      "name": "Basil O'Connor Hall",
+      "lat": 32.432258,
+      "lon": -85.704742,
+      "aliases": [],
+      "source": "osm"
+    },
+    {
+      "id": "benjamin-banneker-hall",
+      "name": "Benjamin Banneker Hall",
+      "lat": 32.433322,
+      "lon": -85.70654,
+      "aliases": [
+        "Banneker"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "carver-foundation-research-building",
+      "name": "Carver Foundation Research Building",
+      "lat": 32.426551,
+      "lon": -85.703051,
+      "aliases": [
+        "Carver",
+        "Carver Foundation"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "chambliss-business-house-annex",
+      "name": "Chambliss Business House Annex",
+      "lat": 32.430282,
+      "lon": -85.71192,
+      "aliases": [],
+      "source": "osm"
+    },
+    {
+      "id": "charles-drew-hall",
+      "name": "Charles Drew Hall",
+      "lat": 32.433383,
+      "lon": -85.708001,
+      "aliases": [
+        "Drew",
+        "Drew Hall"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "charles-e-tompkins-hall",
+      "name": "Charles E. Tompkins Hall",
+      "lat": 32.429085,
+      "lon": -85.704383,
+      "aliases": [
+        "Tompkins",
+        "Dining Hall",
+        "Cafeteria"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "collis-p-huntington-hall",
+      "name": "Collis P. Huntington Hall",
+      "lat": 32.430225,
+      "lon": -85.703836,
+      "aliases": [
+        "Huntington"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "ellen-c-james-hall",
+      "name": "Ellen C. James Hall",
+      "lat": 32.43232,
+      "lon": -85.704188,
+      "aliases": [
+        "James Hall"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "emery-i",
+      "name": "Emery I",
+      "lat": 32.429418,
+      "lon": -85.709319,
+      "aliases": [],
+      "source": "osm"
+    },
+    {
+      "id": "emery-ii",
+      "name": "Emery II",
+      "lat": 32.429577,
+      "lon": -85.70983,
+      "aliases": [],
+      "source": "osm"
+    },
+    {
+      "id": "emery-iii",
+      "name": "Emery III",
+      "lat": 32.429718,
+      "lon": -85.71035,
+      "aliases": [],
+      "source": "osm"
+    },
+    {
+      "id": "emery-iv",
+      "name": "Emery IV",
+      "lat": 32.429879,
+      "lon": -85.710861,
+      "aliases": [],
+      "source": "osm"
+    },
+    {
+      "id": "frederick-d-patterson-hall",
+      "name": "Frederick D. Patterson Hall",
+      "lat": 32.434033,
+      "lon": -85.707557,
+      "aliases": [
+        "Patterson",
+        "Patterson Hall"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "frederick-douglas-hall",
+      "name": "Frederick Douglas Hall",
+      "lat": 32.430431,
+      "lon": -85.704502,
+      "aliases": [
+        "Douglas",
+        "Douglass Hall"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "hollis-burke-frissell-building",
+      "name": "Hollis Burke Frissell Building",
+      "lat": 32.42757,
+      "lon": -85.704936,
+      "aliases": [
+        "Frissell",
+        "Library",
+        "Ford Library",
+        "Ford Motor Company Library"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "james-hm-henderson-hall",
+      "name": "James H.M. Henderson Hall",
+      "lat": 32.433508,
+      "lon": -85.712327,
+      "aliases": [],
+      "source": "osm"
+    },
+    {
+      "id": "james-o-tantum-hall",
+      "name": "James O. Tantum Hall",
+      "lat": 32.431075,
+      "lon": -85.705925,
+      "aliases": [
+        "Tantum"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "john-a-kennery-hall",
+      "name": "John A. Kennery Hall",
+      "lat": 32.433847,
+      "lon": -85.705041,
+      "aliases": [
+        "Kennery"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "john-d-rockefeller-hall",
+      "name": "John D. Rockefeller Hall",
+      "lat": 32.428781,
+      "lon": -85.702822,
+      "aliases": [
+        "Rockefeller"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "kellogg-hotel-and-conference-center",
+      "name": "Kellogg Hotel and Conference Center",
+      "lat": 32.430233,
+      "lon": -85.706716,
+      "aliases": [
+        "Kellogg",
+        "Kellogg Center",
+        "Conference Center"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "lewis-adams-hall",
+      "name": "Lewis Adams Hall",
+      "lat": 32.429798,
+      "lon": -85.703762,
+      "aliases": [
+        "Adams",
+        "Adams Hall"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "lillian-h-harvey-hall",
+      "name": "Lillian H. Harvey Hall",
+      "lat": 32.43177,
+      "lon": -85.705257,
+      "aliases": [
+        "Harvey",
+        "Harvey Hall",
+        "Nursing"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "luther-h-foster-hall",
+      "name": "Luther H. Foster Hall",
+      "lat": 32.43167,
+      "lon": -85.709846,
+      "aliases": [
+        "Foster",
+        "Foster Hall",
+        "Agriculture",
+        "Ag",
+        "Food Science"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "margaret-murray-washington-hall",
+      "name": "Margaret Murray Washington Hall",
+      "lat": 32.429328,
+      "lon": -85.707669,
+      "aliases": [
+        "MMW",
+        "Washington Hall",
+        "Murray Washington"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "mary-mcleod-bethune-hall",
+      "name": "Mary McLeod Bethune Hall",
+      "lat": 32.433237,
+      "lon": -85.707311,
+      "aliases": [
+        "Bethune"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "max-b-thrasher-hall",
+      "name": "Max B. Thrasher Hall",
+      "lat": 32.427447,
+      "lon": -85.703382,
+      "aliases": [
+        "Thrasher",
+        "Thrasher Hall"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "milbank-hall",
+      "name": "Milbank Hall",
+      "lat": 32.433606,
+      "lon": -85.713474,
+      "aliases": [
+        "Milbank",
+        "Veterinary",
+        "Vet Med"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "morrisson-mayberry-building",
+      "name": "Morrisson-Mayberry Building",
+      "lat": 32.431994,
+      "lon": -85.711681,
+      "aliases": [
+        "Morrisson Mayberry",
+        "Mayberry"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "national-center-for-bioethics-in-research-and-health-care",
+      "name": "National Center for Bioethics in Research and Health Care",
+      "lat": 32.43376,
+      "lon": -85.704601,
+      "aliases": [],
+      "source": "osm"
+    },
+    {
+      "id": "olivia-davidson-hall",
+      "name": "Olivia Davidson Hall",
+      "lat": 32.430963,
+      "lon": -85.704106,
+      "aliases": [
+        "Davidson"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "robert-moton-hall",
+      "name": "Robert Moton Hall",
+      "lat": 32.429278,
+      "lon": -85.708907,
+      "aliases": [
+        "Moton",
+        "Moton Hall"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "russell-sage-hall",
+      "name": "Russell Sage Hall",
+      "lat": 32.427928,
+      "lon": -85.703042,
+      "aliases": [
+        "Sage",
+        "Sage Hall"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "sh-kresge-center",
+      "name": "S.H. Kresge Center",
+      "lat": 32.430886,
+      "lon": -85.708522,
+      "aliases": [],
+      "source": "osm"
+    },
+    {
+      "id": "samuel-l-younge-hall",
+      "name": "Samuel L. Younge Hall",
+      "lat": 32.432793,
+      "lon": -85.707461,
+      "aliases": [
+        "Younge",
+        "Younge Hall"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "the-chappie-james-center",
+      "name": "The \"Chappie\" James Center",
+      "lat": 32.430943,
+      "lon": -85.710383,
+      "aliases": [
+        "James Center",
+        "Chappie James",
+        "Engineering",
+        "Engineering Building",
+        "ENGR"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "thomas-campbell-hall",
+      "name": "Thomas Campbell Hall",
+      "lat": 32.432962,
+      "lon": -85.711034,
+      "aliases": [
+        "Campbell",
+        "Campbell Hall"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "thomas-d-russell-hall",
+      "name": "Thomas D. Russell Hall",
+      "lat": 32.432645,
+      "lon": -85.706366,
+      "aliases": [
+        "Russell Hall"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "university-chapel",
+      "name": "University Chapel",
+      "lat": 32.431024,
+      "lon": -85.707351,
+      "aliases": [
+        "Chapel"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "vocational-building",
+      "name": "Vocational Building",
+      "lat": 32.432295,
+      "lon": -85.712306,
+      "aliases": [
+        "Vocational",
+        "Voc Building"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "warren-g-logan-hall",
+      "name": "Warren G. Logan Hall",
+      "lat": 32.426545,
+      "lon": -85.704897,
+      "aliases": [
+        "Logan",
+        "Logan Hall"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "wellness-counseling",
+      "name": "Wellness Counseling",
+      "lat": 32.431181,
+      "lon": -85.709144,
+      "aliases": [],
+      "source": "osm"
+    },
+    {
+      "id": "william-chambliss-hall",
+      "name": "William Chambliss Hall",
+      "lat": 32.43087,
+      "lon": -85.711812,
+      "aliases": [
+        "Chambliss",
+        "Chambliss Hall"
+      ],
+      "source": "osm"
+    },
+    {
+      "id": "william-g-willcox-hall-a",
+      "name": "William G. Willcox Hall A",
+      "lat": 32.429798,
+      "lon": -85.708163,
+      "aliases": [],
+      "source": "osm"
+    },
+    {
+      "id": "william-g-willcox-hall-b",
+      "name": "William G. Willcox Hall B",
+      "lat": 32.430183,
+      "lon": -85.708625,
+      "aliases": [],
+      "source": "osm"
+    },
+    {
+      "id": "william-g-willcox-hall-c",
+      "name": "William G. Willcox Hall C",
+      "lat": 32.429879,
+      "lon": -85.70894,
+      "aliases": [],
+      "source": "osm"
+    },
+    {
+      "id": "william-g-willcox-hall-d",
+      "name": "William G. Willcox Hall D",
+      "lat": 32.430656,
+      "lon": -85.709274,
+      "aliases": [],
+      "source": "osm"
+    },
+    {
+      "id": "william-g-willcox-hall-e",
+      "name": "William G. Willcox Hall E",
+      "lat": 32.430384,
+      "lon": -85.70959,
+      "aliases": [],
+      "source": "osm"
+    },
+    {
+      "id": "williams-bowie-hall",
+      "name": "Williams Bowie Hall",
+      "lat": 32.434805,
+      "lon": -85.70877,
+      "aliases": [
+        "Bowie",
+        "Bowie Hall"
+      ],
+      "source": "osm"
+    }
+  ]
+}
