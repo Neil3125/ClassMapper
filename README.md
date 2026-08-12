@@ -103,6 +103,9 @@ estimate and labels it as approximate.
 - **Leave-by alerts** — browser notification when it's time to walk (app must be open)
 - **Offline** — opt-in in Settings; caches the app, buildings, and visited map tiles
 - **Pin-drop correction** — tap the map to fix a building's location or add a missing one
+- **Collapsible next-class card** — tap the handle bar at the bottom to shrink the card
+  down to a one-line summary and see more of the map, or expand it back. Remembers
+  your choice across reloads
 - **Backup / restore** — export your schedule as JSON (the API key is never included)
 
 ### Opening a route in another map app

@@ -44,6 +44,7 @@ export const DEFAULT_SETTINGS = {
   notifications: false,
   satellite: false,
   offline: false,        // opt-in service worker; see registerServiceWorker()
+  cardCollapsed: false,  // next-class card hidden down to its handle bar
 };
 
 export function settings() {

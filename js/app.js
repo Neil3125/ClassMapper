@@ -46,6 +46,7 @@ async function boot() {
     ['import', wireImport],
     ['settings', wireSettings],
     ['day route legend', wireDayLegend],
+    ['next card toggle', wireNextCardToggle],
   ]) {
     try {
       fn();
@@ -152,6 +153,7 @@ async function refresh() {
   if (!hasClasses) {
     M.renderStops([]);
     M.clearRoute();
+    updateCardSummary('No classes yet');
     return;
   }
 
@@ -168,6 +170,7 @@ async function refresh() {
     $('#next-leave').textContent = '';
     $('#next-steps').hidden = true;
     $('#next-openin').hidden = true;
+    updateCardSummary('Nothing left this week');
     return;
   }
 
@@ -187,6 +190,9 @@ async function refresh() {
   $('#next-where').textContent = b
     ? `${b.name}${next.cls.room ? ` · Room ${next.cls.room}` : ''}`
     : `⚠ No building set${next.cls.buildingRaw ? ` (${next.cls.buildingRaw})` : ''}`;
+
+  const codeForSummary = next.cls.code || next.cls.title || 'Class';
+  updateCardSummary(next.isNow ? `${codeForSummary} · now` : `${codeForSummary} · ${S.fmtTime(next.cls.startMin)}`);
 
   if (!b) {
     $('#next-walk').textContent = '';
@@ -271,6 +277,27 @@ function updateOpenInLinks(b) {
   $('#open-apple').href = EXT.appleMapsUrl(b);
   $('#open-waze').href = EXT.wazeUrl(b);
   openIn.hidden = false;
+}
+
+/** Keep the handle bar's one-line summary current, whether or not the card is collapsed. */
+function updateCardSummary(text) {
+  const el = $('#nextcard-toggle-summary');
+  if (el) el.textContent = text;
+}
+
+function setCardCollapsed(collapsed) {
+  $('#nextcard').classList.toggle('nextcard--collapsed', collapsed);
+  $('#nextcard-toggle').setAttribute('aria-expanded', String(!collapsed));
+  M.invalidate(); // more/less map is now visible under the card
+}
+
+function wireNextCardToggle() {
+  setCardCollapsed(Boolean(store.settings().cardCollapsed));
+  $('#nextcard-toggle').onclick = () => {
+    const collapsed = !$('#nextcard').classList.contains('nextcard--collapsed');
+    setCardCollapsed(collapsed);
+    store.saveSettings({ cardCollapsed: collapsed });
+  };
 }
 
 /** Where you'll be before `next`: the building of the preceding class today. */

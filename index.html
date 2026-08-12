@@ -46,39 +46,46 @@
 
 <!-- Bottom card: the main "what's next" answer -->
 <section id="nextcard" class="nextcard" aria-live="polite">
-  <div class="nextcard__empty" id="nextcard-empty">
-    <h2>No classes yet</h2>
-    <p>Import a screenshot of your schedule, or add classes by hand.</p>
-    <div class="row">
-      <button id="btn-import-empty" class="btn btn--primary">Import screenshot</button>
-      <button id="btn-add-empty" class="btn">Add manually</button>
-    </div>
-  </div>
+  <button id="nextcard-toggle" class="nextcard__toggle" aria-expanded="true" aria-controls="nextcard-content">
+    <span id="nextcard-toggle-summary" class="nextcard__toggle-summary">No classes yet</span>
+    <span class="nextcard__toggle-chevron" aria-hidden="true">⌄</span>
+  </button>
 
-  <div class="nextcard__body" id="nextcard-body" hidden>
-    <div class="nextcard__label" id="next-label">Next class</div>
-    <div class="nextcard__course">
-      <span id="next-code">—</span>
-      <span class="nextcard__time" id="next-time"></span>
-    </div>
-    <div class="nextcard__where" id="next-where"></div>
-    <div class="nextcard__walk">
-      <span id="next-walk" class="pill"></span>
-      <span id="next-leave" class="pill pill--accent"></span>
-    </div>
-    <div class="nextcard__note" id="next-note" hidden></div>
-
-    <div class="openin" id="next-openin" hidden>
-      <span class="openin__label">Open in</span>
-      <a id="open-google" class="openin__btn" target="_blank" rel="noopener">Google Maps</a>
-      <a id="open-apple" class="openin__btn" target="_blank" rel="noopener">Apple Maps</a>
-      <a id="open-waze" class="openin__btn" target="_blank" rel="noopener">Waze</a>
+  <div id="nextcard-content" class="nextcard__content">
+    <div class="nextcard__empty" id="nextcard-empty">
+      <h2>No classes yet</h2>
+      <p>Import a screenshot of your schedule, or add classes by hand.</p>
+      <div class="row">
+        <button id="btn-import-empty" class="btn btn--primary">Import screenshot</button>
+        <button id="btn-add-empty" class="btn">Add manually</button>
+      </div>
     </div>
 
-    <details class="steps" id="next-steps" hidden>
-      <summary>Walking directions</summary>
-      <ol id="next-steps-list"></ol>
-    </details>
+    <div class="nextcard__body" id="nextcard-body" hidden>
+      <div class="nextcard__label" id="next-label">Next class</div>
+      <div class="nextcard__course">
+        <span id="next-code">—</span>
+        <span class="nextcard__time" id="next-time"></span>
+      </div>
+      <div class="nextcard__where" id="next-where"></div>
+      <div class="nextcard__walk">
+        <span id="next-walk" class="pill"></span>
+        <span id="next-leave" class="pill pill--accent"></span>
+      </div>
+      <div class="nextcard__note" id="next-note" hidden></div>
+
+      <div class="openin" id="next-openin" hidden>
+        <span class="openin__label">Open in</span>
+        <a id="open-google" class="openin__btn" target="_blank" rel="noopener">Google Maps</a>
+        <a id="open-apple" class="openin__btn" target="_blank" rel="noopener">Apple Maps</a>
+        <a id="open-waze" class="openin__btn" target="_blank" rel="noopener">Waze</a>
+      </div>
+
+      <details class="steps" id="next-steps" hidden>
+        <summary>Walking directions</summary>
+        <ol id="next-steps-list"></ol>
+      </details>
+    </div>
   </div>
 </section>
 
