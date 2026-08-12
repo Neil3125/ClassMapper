@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reset ClassMapper</title>
+<style>
+  body { font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         max-width: 32rem; margin: 0 auto; padding: 2rem 1.25rem; color: #1a1613; background: #fbf9f6; }
+  h1 { color: #8f1d21; font-size: 1.3rem; margin-bottom: .25rem; }
+  p { color: #5d554e; }
+  #log { background: #fff; border: 1px solid #e2dcd4; border-radius: 10px; padding: .75rem 1rem;
+         font-family: ui-monospace, Consolas, monospace; font-size: .82rem; white-space: pre-wrap; }
+  .ok { color: #1f7a4d; } .bad { color: #b3261e; }
+  a.btn { display: inline-block; margin-top: 1rem; background: #8f1d21; color: #fff;
+          text-decoration: none; padding: .7rem 1.1rem; border-radius: 9px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>Reset ClassMapper</h1>
+<p>
+  This removes the offline cache and the service worker, then sends you back to a fresh copy
+  of the app. <strong>Your classes, pins and API key are not touched</strong> — those live
+  separately and will still be there.
+</p>
+
+<div id="log">Working…</div>
+<a class="btn" href="./" id="back" hidden>Open ClassMapper</a>
+
+<script>
+const log = document.getElementById('log');
+const line = (msg, cls) => {
+  const el = document.createElement('div');
+  if (cls) el.className = cls;
+  el.textContent = msg;
+  log.appendChild(el);
+};
+
+(async () => {
+  log.textContent = '';
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const r of regs) {
+        await r.unregister();
+        line('unregistered service worker: ' + (r.active ? r.active.scriptURL : r.scope), 'ok');
+      }
+      if (!regs.length) line('no service workers were registered', 'ok');
+    } else {
+      line('service workers not supported here', 'ok');
+    }
+
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      for (const k of keys) {
+        await caches.delete(k);
+        line('deleted cache: ' + k, 'ok');
+      }
+      if (!keys.length) line('no caches to delete', 'ok');
+    }
+
+    const classes = JSON.parse(localStorage.getItem('classmapper:classes') || '[]');
+    line('');
+    line('Done. Your ' + classes.length + ' saved class(es) are untouched.', 'ok');
+    document.getElementById('back').hidden = false;
+  } catch (err) {
+    line('Failed: ' + err.message, 'bad');
+    line('Try clearing site data for localhost in your browser settings.', 'bad');
+  }
+})();
+</script>
+
+</body>
+</html>

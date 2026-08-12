@@ -27,11 +27,24 @@ your schedule by screenshot — manual entry works without any key.
 
 ### 2. Run it locally
 
+Double-click **`start.bat`**. It starts the server, waits for it to come up, and opens
+your browser at <http://localhost:8765>. Live GPS works on `localhost`.
+
+When you're done, double-click **`stop.bat`** to shut the server down.
+
+Running `start.bat` twice won't spawn a second server — it notices one is already
+running and just opens the tab.
+
+<details>
+<summary>Or start it by hand</summary>
+
 ```bash
-python -m http.server 8765
+python serve.py 8765
 ```
 
-Then open <http://localhost:8765>. Live GPS works on `localhost`.
+Use `serve.py`, not `python -m http.server` — it sends no-cache headers and the
+right MIME types, so you never end up staring at a stale copy after an edit.
+</details>
 
 ### 3. Put it on your phone
 
@@ -82,9 +95,25 @@ estimate and labels it as approximate.
 - **Turn-by-turn directions** along actual campus walkways
 - **Full-day route** — chains every class today, with total distance and free gaps
 - **Leave-by alerts** — browser notification when it's time to walk (app must be open)
-- **Offline** — map shell, schedule, buildings, and visited tiles are cached
+- **Offline** — opt-in in Settings; caches the app, buildings, and visited map tiles
 - **Pin-drop correction** — tap the map to fix a building's location or add a missing one
 - **Backup / restore** — export your schedule as JSON (the API key is never included)
+
+### Offline mode is opt-in
+
+Settings → **Work offline**. It's off by default on purpose: a service worker sits
+between the page and the server permanently, and if one gets into a bad state it
+can keep serving old files. Turn it on once the app is on your phone and working —
+that's where offline actually matters.
+
+If the app ever looks broken, stuck on an old version, or won't load, open:
+
+```
+<your-url>/reset.html
+```
+
+That clears the cache and the service worker. **Your classes, pins and API key are
+not touched.**
 
 ---
 

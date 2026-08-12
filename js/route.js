@@ -97,6 +97,11 @@ function writeCache(key, value) {
 export async function walk(a, b, { signal } = {}) {
   if (!a || !b) return null;
 
+  // Same building (back-to-back classes in one place): no walk, no API call.
+  if (haversine(a, b) < 15) {
+    return { meters: 0, seconds: 0, minutes: 0, shape: [], steps: [], approximate: false, samePlace: true };
+  }
+
   const key = cacheKey(a, b);
   const cached = readCache(key);
   if (cached) return { ...cached, cached: true };
@@ -143,14 +148,23 @@ export async function walk(a, b, { signal } = {}) {
   }
 }
 
-/** Chain a list of {lat, lon} stops into consecutive legs. */
+/**
+ * Chain a list of {lat, lon} stops into consecutive legs.
+ * Back-to-back classes in the same building are collapsed — routing a building
+ * to itself just adds a spurious "1 min" leg to the day's total.
+ */
 export async function chain(points, opts) {
+  const same = (a, b) => a && b && Math.abs(a.lat - b.lat) < 1e-6 && Math.abs(a.lon - b.lon) < 1e-6;
+
+  const stops = points.filter((p, i) => i === 0 || !same(p, points[i - 1]));
+
   const legs = [];
-  for (let i = 0; i < points.length - 1; i++) {
-    legs.push(await walk(points[i], points[i + 1], opts));
+  for (let i = 0; i < stops.length - 1; i++) {
+    legs.push(await walk(stops[i], stops[i + 1], opts));
   }
   return {
     legs,
+    stops,
     meters: legs.reduce((s, l) => s + (l?.meters ?? 0), 0),
     minutes: legs.reduce((s, l) => s + (l?.minutes ?? 0), 0),
     approximate: legs.some((l) => l?.approximate),

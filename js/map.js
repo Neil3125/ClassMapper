@@ -41,7 +41,27 @@ export function init(elementId = 'map') {
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   markerGroup = L.layerGroup().addTo(map);
 
+  watchContainerSize(elementId);
+
   return map;
+}
+
+// If the container resizes without Leaflet being told, its renderer keeps the
+// old pixel bounds and clips every drawn route away to an empty path. That
+// happens on phone rotation and when mobile browser chrome hides on scroll.
+function watchContainerSize(elementId) {
+  let pending;
+  const refit = () => {
+    clearTimeout(pending);
+    pending = setTimeout(() => map?.invalidateSize({ animate: false }), 150);
+  };
+
+  window.addEventListener('resize', refit);
+  window.addEventListener('orientationchange', refit);
+
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(refit).observe(document.getElementById(elementId));
+  }
 }
 
 export function toggleSatellite() {

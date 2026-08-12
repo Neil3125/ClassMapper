@@ -236,6 +236,20 @@
 
     <hr>
 
+    <h3>Offline mode</h3>
+    <p class="hint">
+      Caches the app so it still opens with no signal — worth turning on once
+      it's on your phone. Leave it off while you're setting things up, so you
+      always get the newest version. If it ever misbehaves, open
+      <strong>reset.html</strong>.
+    </p>
+    <label class="check">
+      <input type="checkbox" id="toggle-offline"> Work offline
+    </label>
+    <div id="offline-feedback" class="feedback"></div>
+
+    <hr>
+
     <h3>Buildings</h3>
     <p class="hint">
       <span id="building-count">—</span> Tuskegee buildings from OpenStreetMap. Pins are building
@@ -260,6 +274,13 @@
       <button id="btn-wipe" class="btn btn--danger btn--sm">Delete everything</button>
     </div>
     <div id="data-feedback" class="feedback"></div>
+
+    <p class="hint">
+      If the app ever looks broken or stuck on an old version, clear the offline
+      cache. This keeps your classes — it only re-downloads the app files.
+    </p>
+    <button id="btn-reset-cache" class="btn btn--sm">Clear offline cache and reload</button>
+    <div id="cache-feedback" class="feedback"></div>
 
     <hr>
     <p class="hint">

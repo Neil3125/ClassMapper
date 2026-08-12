@@ -12,6 +12,7 @@ export const KEYS = {
   ROUTES: 'routeCache',
   SETTINGS: 'settings',
   FIRED: 'firedAlerts',
+  OCR_MODEL: 'ocrModel', // whichever Gemini model candidate last worked
 };
 
 export function read(key, fallback) {
@@ -42,6 +43,7 @@ export const DEFAULT_SETTINGS = {
   walkSpeed: 1.35,       // m/s, used by the offline fallback estimate
   notifications: false,
   satellite: false,
+  offline: false,        // opt-in service worker; see registerServiceWorker()
 };
 
 export function settings() {

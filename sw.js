@@ -1,13 +1,18 @@
 // Offline support.
 //
-// App shell + building data are precached and served cache-first.
-// Map tiles are cached as you view them, so ground you've already walked
-// still renders with no signal. API calls are never cached.
+// Strategy is network-first for the app's own files: whatever is on the server
+// always wins, so edits land on the next load. The cache is a fallback for when
+// there's no signal, not the source of truth. (An earlier cache-first version
+// meant updates never appeared and an emptied cache bricked the app.)
+//
+// Map tiles are cache-first — they never change and re-downloading them on
+// campus wifi is a waste.
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL = `classmapper-shell-${VERSION}`;
 const TILES = `classmapper-tiles-${VERSION}`;
 const TILE_LIMIT = 600;
+const NET_TIMEOUT = 4000;
 
 const SHELL_FILES = [
   './',
@@ -36,14 +41,14 @@ const SHELL_FILES = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(SHELL).then(async (cache) => {
-      // addAll fails the whole install if one file 404s; add individually so a
-      // missing optional asset can't brick the app.
+    (async () => {
+      const cache = await caches.open(SHELL);
+      // Add individually: one 404 shouldn't fail the whole install.
       await Promise.all(
-        SHELL_FILES.map((file) => cache.add(new Request(file, { cache: 'reload' })).catch(() => {})),
+        SHELL_FILES.map((f) => cache.add(new Request(f, { cache: 'reload' })).catch(() => {})),
       );
       await self.skipWaiting();
-    }),
+    })(),
   );
 });
 
@@ -57,6 +62,14 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+self.addEventListener('message', (event) => {
+  if (event.data === 'skipWaiting') self.skipWaiting();
+  // Lets the page (and the reset screen) confirm which worker is really live.
+  if (event.data === 'version' && event.ports[0]) {
+    event.ports[0].postMessage({ version: VERSION, shell: SHELL });
+  }
+});
+
 function isTile(url) {
   return url.hostname === 'tile.openstreetmap.org' || url.hostname === 'server.arcgisonline.com';
 }
@@ -68,13 +81,17 @@ async function trimTiles() {
   await Promise.all(keys.slice(0, keys.length - TILE_LIMIT).map((k) => cache.delete(k)));
 }
 
+function timeout(ms) {
+  return new Promise((resolve) => setTimeout(() => resolve(null), ms));
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
 
-  // Never cache the AI or routing calls.
+  // Never touch the AI or routing calls — route.js does its own caching.
   if (url.hostname === 'generativelanguage.googleapis.com' || url.hostname === 'valhalla1.openstreetmap.de') {
     return;
   }
@@ -105,25 +122,39 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     (async () => {
       const cache = await caches.open(SHELL);
+
+      // Network first. `cache: 'no-cache'` forces revalidation so the browser's
+      // own HTTP cache can't serve a stale file behind our back.
+      let res = null;
+      try {
+        res = await Promise.race([
+          fetch(new Request(request, { cache: 'no-cache' })),
+          timeout(NET_TIMEOUT),
+        ]);
+      } catch {
+        res = null;
+      }
+
+      if (res && res.ok) {
+        cache.put(request, res.clone()).catch(() => {});
+        return res;
+      }
+
+      // Offline (or the server errored): fall back to whatever we have.
       const hit = await cache.match(request, { ignoreSearch: true });
-
-      // Cache-first, but refresh in the background so edits show up next load.
-      const network = fetch(request)
-        .then(async (res) => {
-          if (res.ok) await cache.put(request, res.clone());
-          return res;
-        })
-        .catch(() => null);
-
       if (hit) return hit;
 
-      const res = await network;
+      // A server response we don't want to cache is still better than nothing.
       if (res) return res;
 
       if (request.mode === 'navigate') {
-        return (await cache.match('index.html')) ?? new Response('Offline', { status: 503 });
+        const shell = await cache.match('index.html', { ignoreSearch: true });
+        if (shell) return shell;
       }
-      return new Response('Offline', { status: 503 });
+      return new Response('ClassMapper is offline and this file was never cached.', {
+        status: 503,
+        headers: { 'Content-Type': 'text/plain' },
+      });
     })(),
   );
 });

@@ -33,13 +33,23 @@ async function boot() {
     console.error(err);
   }
 
-  buildDayChips();
-  buildBuildingOptions();
-  wireTopbar();
-  wirePanels();
-  wireClassForm();
-  wireImport();
-  wireSettings();
+  // Wire each area independently: one missing element shouldn't stop the rest
+  // of the app from working.
+  for (const [name, fn] of [
+    ['day chips', buildDayChips],
+    ['building list', buildBuildingOptions],
+    ['top bar', wireTopbar],
+    ['panels', wirePanels],
+    ['class form', wireClassForm],
+    ['import', wireImport],
+    ['settings', wireSettings],
+  ]) {
+    try {
+      fn();
+    } catch (err) {
+      console.error(`ClassMapper: failed to wire ${name}`, err);
+    }
+  }
 
   refresh();
   startGeolocation();
@@ -47,8 +57,51 @@ async function boot() {
   // One ticker drives the countdown, the alerts, and the class rollover.
   setInterval(tick, 30_000);
 
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+  registerServiceWorker();
+}
+
+/**
+ * Offline mode is opt-in (Settings → Offline mode).
+ *
+ * A service worker caches the app's own files, which is what makes the app work
+ * with no signal — but it also sits between the page and the server forever. A
+ * worker that gets into a bad state can keep serving stale files with no way to
+ * fix it from inside the app. Turning it on deliberately, once you know the app
+ * works, keeps that failure mode out of your way. reset.html is the escape
+ * hatch if it ever does misbehave.
+ */
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+
+  // Note: the bare path is required — registering 'sw.js?v=N' fails in Chrome.
+  const wanted = new URL('sw.js', location.href).href;
+
+  try {
+    const regs = await navigator.serviceWorker.getRegistrations();
+
+    if (!store.settings().offline) {
+      // Not opted in: make sure no worker is left running from a previous try.
+      await Promise.all(regs.map((r) => r.unregister()));
+      return;
+    }
+
+    // Drop registrations pointing at a different script URL (an older build).
+    for (const reg of regs) {
+      const url = reg.active?.scriptURL ?? reg.installing?.scriptURL ?? reg.waiting?.scriptURL;
+      if (url && url !== wanted) await reg.unregister();
+    }
+
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloading) return;
+      reloading = true;
+      location.reload();
+    });
+
+    const reg = await navigator.serviceWorker.register(wanted);
+    reg.update().catch(() => {});
+  } catch (err) {
+    console.warn('Service worker registration failed', err);
   }
 }
 
@@ -164,7 +217,9 @@ async function refresh() {
   const leaveAt = S.leaveBy(next.startsAt, route.minutes, bufferMin);
   const minsToLeave = Math.round((leaveAt - now) / 60000);
 
-  $('#next-walk').textContent = `${route.minutes} min walk · ${R.fmtDistance(route.meters)}`;
+  $('#next-walk').textContent = route.samePlace
+    ? 'Same building — no walk'
+    : `${route.minutes} min walk · ${R.fmtDistance(route.meters)}`;
 
   const leaveEl = $('#next-leave');
   leaveEl.classList.remove('pill--late', 'pill--now');
@@ -724,6 +779,30 @@ function wireSettings() {
     }
   };
 
+  $('#toggle-offline').checked = Boolean(cfg.offline);
+  $('#toggle-offline').onchange = async (e) => {
+    const fb = $('#offline-feedback');
+    store.saveSettings({ offline: e.target.checked });
+    if (e.target.checked) {
+      fb.textContent = 'Caching the app…';
+      fb.className = 'feedback';
+      await registerServiceWorker();
+      const ok = (await navigator.serviceWorker.getRegistrations()).length > 0;
+      fb.textContent = ok
+        ? 'Offline mode on. The app will open without a signal.'
+        : "This browser wouldn't enable offline mode. Everything else still works.";
+      fb.className = 'feedback ' + (ok ? 'feedback--good' : 'feedback--bad');
+      if (!ok) {
+        store.saveSettings({ offline: false });
+        e.target.checked = false;
+      }
+    } else {
+      await clearAppCache();
+      fb.textContent = 'Offline mode off and cache cleared.';
+      fb.className = 'feedback';
+    }
+  };
+
   $('#btn-test-notify').onclick = () => {
     const fb = $('#notify-feedback');
     try {
@@ -802,13 +881,41 @@ function wireSettings() {
     e.target.value = '';
   };
 
-  $('#btn-wipe').onclick = () => {
+  $('#btn-wipe').onclick = async () => {
     if (!confirm('Delete your classes, pins, key and settings from this device? This cannot be undone.')) return;
     for (const key of Object.values(store.KEYS)) store.remove(key);
+    await clearAppCache();
     location.reload();
   };
 
+  // Escape hatch: a stale service worker or cache should never be a dead end.
+  $('#btn-reset-cache').onclick = async () => {
+    const el = $('#cache-feedback');
+    el.textContent = 'Clearing…';
+    el.className = 'feedback';
+    await clearAppCache();
+    el.textContent = 'Cleared. Reloading…';
+    el.className = 'feedback feedback--good';
+    setTimeout(() => location.reload(), 600);
+  };
+
   renderOverrides();
+}
+
+/** Drop every service worker and cached file. Leaves your schedule alone. */
+async function clearAppCache() {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+  } catch (err) {
+    console.warn('Cache clear failed', err);
+  }
 }
 
 function renderOverrides() {

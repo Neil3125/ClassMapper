@@ -20,6 +20,10 @@
 
 * { box-sizing: border-box; }
 
+/* Any author `display` rule beats the `hidden` attribute's UA style, which
+   silently un-hides every panel. Keep this above everything else. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   height: 100%;
@@ -58,10 +62,10 @@ html, body {
   border: 1px solid rgba(255, 255, 255, 0.28);
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
-  font-size: 1rem;
+  font-size: 1.05rem;
   line-height: 1;
-  width: 36px; height: 36px;
-  border-radius: 9px;
+  width: 42px; height: 42px;
+  border-radius: 10px;
   cursor: pointer;
   display: grid;
   place-items: center;

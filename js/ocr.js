@@ -8,8 +8,19 @@
 import { read, write, remove, KEYS } from './store.js';
 import { promptManifest, match } from './buildings.js';
 
-const MODEL = 'gemini-2.0-flash';
 const BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+// Google periodically retires dated model snapshots (gemini-2.0-flash was live
+// for months, then started rejecting every request with a 404 telling callers
+// to move on — which reads exactly like a bad key if you're not looking at the
+// message). Rather than hardcode one name, try a short list in order and
+// remember whichever one actually answers, so a single future retirement can't
+// silently break imports again.
+//
+// 'gemini-flash-latest' is Google's own rolling alias — it should always point
+// at whatever the current fast model is, so it's tried first. The pinned
+// versions below it are fallbacks in case the alias itself is ever missing.
+const MODEL_CANDIDATES = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash'];
 
 export function getKey() {
   return read(KEYS.API_KEY, '');
@@ -25,13 +36,24 @@ export function hasKey() {
   return Boolean(getKey());
 }
 
+/** Confirms the key works AND that at least one candidate model answers it. */
 export async function testKey(key = getKey()) {
   if (!key) throw new Error('No API key saved');
-  const res = await fetch(`${BASE}?key=${encodeURIComponent(key)}`);
-  if (res.status === 400 || res.status === 401 || res.status === 403) {
+
+  const listRes = await fetch(`${BASE}?key=${encodeURIComponent(key)}`);
+  if (listRes.status === 400 || listRes.status === 401 || listRes.status === 403) {
     throw new Error('That key was rejected. Check you copied all of it from Google AI Studio.');
   }
-  if (!res.ok) throw new Error(`Google returned ${res.status}`);
+  if (!listRes.ok) throw new Error(`Google returned ${listRes.status}`);
+
+  // The key is valid, but confirm a model will actually respond to it — this
+  // is what catches "your key is fine, Google just retired the model" early,
+  // in Settings, instead of mid-import.
+  try {
+    await generate({ contents: [{ role: 'user', parts: [{ text: 'Reply with the single word: ok' }] }] });
+  } catch (err) {
+    throw new Error(`Key works, but no Gemini model responded: ${err.message}`);
+  }
   return true;
 }
 
@@ -101,22 +123,79 @@ Campus building list (JSON):
 ${JSON.stringify(buildings)}`;
 }
 
+/** True for a 404 / "model not found or retired" style response, where trying
+ *  the next candidate model makes sense. False for anything else (bad key,
+ *  rate limit, bad request) where retrying with a different model won't help. */
+function isModelUnavailable(status, detail) {
+  if (status === 404) return true;
+  return /not found|no longer available|deprecated|not supported/i.test(detail ?? '');
+}
+
+async function callModel(model, key, body, signal) {
+  const res = await fetch(`${BASE}/${model}:generateContent?key=${encodeURIComponent(key)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal,
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let detail = '';
+    try {
+      detail = (await res.json())?.error?.message ?? '';
+    } catch { /* body wasn't JSON */ }
+    const err = new Error(detail || `Google returned ${res.status}`);
+    err.status = res.status;
+    err.detail = detail;
+    throw err;
+  }
+  return res.json();
+}
+
+/**
+ * Call Gemini, trying each candidate model in order until one actually
+ * answers. The model that works is remembered so later imports go straight to
+ * it instead of re-discovering it every time.
+ */
+async function generate(body, signal) {
+  const key = getKey();
+  if (!key) throw new Error('Add your Gemini API key in Settings first');
+
+  const remembered = read(KEYS.OCR_MODEL, null);
+  const order = remembered ? [remembered, ...MODEL_CANDIDATES.filter((m) => m !== remembered)] : MODEL_CANDIDATES;
+
+  let lastErr;
+  for (const model of order) {
+    try {
+      const data = await callModel(model, key, body, signal);
+      if (model !== remembered) write(KEYS.OCR_MODEL, model);
+      return data;
+    } catch (err) {
+      if (err.name === 'AbortError') throw err;
+      lastErr = err;
+      if (err.status === 400 && /API key/i.test(err.detail ?? '')) {
+        throw new Error('Your API key was rejected. Re-check it in Settings.');
+      }
+      if (err.status === 429) throw new Error('Rate limited by Google. Wait a minute and try again.');
+      if (!isModelUnavailable(err.status, err.detail)) throw err;
+      // Model unavailable/retired: fall through and try the next candidate.
+    }
+  }
+  throw lastErr ?? new Error('No Gemini model responded.');
+}
+
 /**
  * Parse a schedule screenshot.
  * Returns { classes: [...draft records], warnings: [...] }
  */
 export async function parseScreenshot(file, { signal } = {}) {
-  const key = getKey();
-  if (!key) throw new Error('Add your Gemini API key in Settings first');
+  if (!getKey()) throw new Error('Add your Gemini API key in Settings first');
 
   const image = await fileToBase64(file);
   const manifest = promptManifest();
 
-  const res = await fetch(`${BASE}/${MODEL}:generateContent?key=${encodeURIComponent(key)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    signal,
-    body: JSON.stringify({
+  const data = await generate(
+    {
       contents: [
         {
           role: 'user',
@@ -131,20 +210,10 @@ export async function parseScreenshot(file, { signal } = {}) {
         responseMimeType: 'application/json',
         responseSchema: RESPONSE_SCHEMA,
       },
-    }),
-  });
+    },
+    signal,
+  );
 
-  if (!res.ok) {
-    let detail = '';
-    try {
-      detail = (await res.json())?.error?.message ?? '';
-    } catch { /* body wasn't JSON */ }
-    if (res.status === 400 && /API key/i.test(detail)) throw new Error('Your API key was rejected. Re-check it in Settings.');
-    if (res.status === 429) throw new Error('Rate limited by Google. Wait a minute and try again.');
-    throw new Error(detail || `Google returned ${res.status}`);
-  }
-
-  const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') ?? '';
   if (!text) throw new Error('The model returned nothing readable. Try a clearer screenshot.');
 
