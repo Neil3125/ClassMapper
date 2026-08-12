@@ -418,6 +418,22 @@ fieldset.days legend { font-size: 0.78rem; font-weight: 600; color: var(--ink-so
 .dropzone:hover, .dropzone.is-over { border-color: var(--crimson); background: #fdf7f7; }
 .dropzone__icon { font-size: 1.7rem; color: var(--crimson); }
 
+.backup-paste {
+  display: block;
+  width: 100%;
+  min-height: 100px;
+  margin: 4px 0 8px;
+  padding: 10px 11px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.78rem;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  resize: vertical;
+}
+.backup-paste:focus { outline: 2px solid var(--gold); outline-offset: 1px; border-color: var(--gold); }
+
 .busy { text-align: center; padding: 32px 0; color: var(--ink-soft); }
 .spinner {
   width: 32px; height: 32px; margin: 0 auto 12px;

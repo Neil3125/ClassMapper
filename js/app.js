@@ -986,27 +986,61 @@ function wireSettings() {
 
   $('#btn-export').onclick = () => {
     const blob = new Blob([JSON.stringify(store.exportAll(), null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
+    a.href = url;
     a.download = `classmapper-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(a.href);
-    dataFeedback('Backup downloaded. Your API key is not included.', 'good');
+    a.remove();
+    // Revoking immediately can cancel the download before some mobile browsers
+    // finish reading the blob — give it a moment first.
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    dataFeedback('Backup downloading. Your API key is not included.', 'good');
+  };
+
+  $('#btn-copy-backup').onclick = async () => {
+    const text = JSON.stringify(store.exportAll(), null, 2);
+    try {
+      if (!navigator.clipboard) throw new Error('no Clipboard API');
+      await navigator.clipboard.writeText(text);
+      dataFeedback('Backup copied. Paste it somewhere safe, like Notes.', 'good');
+    } catch {
+      // Clipboard API needs a permission some mobile browsers just refuse —
+      // fall back to the same paste box used for restoring, pre-filled and
+      // selected, so the user can copy it by hand instead.
+      const box = $('#backup-paste');
+      box.hidden = false;
+      box.value = text;
+      box.focus();
+      box.select();
+      dataFeedback("Couldn't copy automatically — it's selected below, copy it manually.", 'bad');
+    }
   };
 
   $('#file-restore').onchange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    try {
-      store.importAll(JSON.parse(await file.text()));
-      await B.load();
-      dataFeedback('Backup restored.', 'good');
-      buildBuildingOptions();
-      refresh();
-    } catch (err) {
-      dataFeedback(err.message, 'bad');
-    }
+    await restoreBackup(await file.text());
     e.target.value = '';
+  };
+
+  $('#btn-paste-restore').onclick = () => {
+    const box = $('#backup-paste');
+    const confirmBtn = $('#btn-paste-restore-confirm');
+    const opening = box.hidden;
+    box.hidden = !opening;
+    confirmBtn.hidden = !opening;
+    if (opening) {
+      box.value = '';
+      box.focus();
+    }
+  };
+
+  $('#btn-paste-restore-confirm').onclick = async () => {
+    await restoreBackup($('#backup-paste').value);
+    $('#backup-paste').hidden = true;
+    $('#btn-paste-restore-confirm').hidden = true;
   };
 
   $('#btn-wipe').onclick = async () => {
@@ -1086,6 +1120,31 @@ function dataFeedback(msg, kind = '') {
   const el = $('#data-feedback');
   el.textContent = msg;
   el.className = 'feedback' + (kind ? ` feedback--${kind}` : '');
+}
+
+/** Shared by both restore paths: pick a file, or paste JSON text directly. */
+async function restoreBackup(rawText) {
+  const text = String(rawText ?? '').trim();
+  if (!text) {
+    dataFeedback('Nothing to restore.', 'bad');
+    return;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    dataFeedback("That doesn't look like a valid backup file.", 'bad');
+    return;
+  }
+  try {
+    store.importAll(payload);
+    await B.load();
+    dataFeedback('Backup restored.', 'good');
+    buildBuildingOptions();
+    refresh();
+  } catch (err) {
+    dataFeedback(err.message, 'bad');
+  }
 }
 
 // ---------- pin drop ----------

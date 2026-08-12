@@ -54,11 +54,16 @@ export function saveSettings(patch) {
   write(KEYS.SETTINGS, { ...settings(), ...patch });
 }
 
-// Everything, as one portable object — for the export/backup button.
+// What a backup actually carries: your classes and everything you've taught
+// or configured — not the API key (yours to keep, never leaves this device),
+// and not ROUTES/FIRED, which are regenerable caches rather than settings.
+// Restoring a stale FIRED, in particular, could suppress a real notification
+// later if the dates ever lined up — better to just not carry it.
+const BACKUP_KEYS = [KEYS.CLASSES, KEYS.OVERRIDES, KEYS.CUSTOM, KEYS.ALIASES, KEYS.SETTINGS, KEYS.OCR_MODEL];
+
 export function exportAll() {
   const out = {};
-  for (const key of Object.values(KEYS)) {
-    if (key === KEYS.API_KEY) continue; // never include the key in a backup
+  for (const key of BACKUP_KEYS) {
     const val = read(key, null);
     if (val !== null) out[key] = val;
   }
@@ -68,7 +73,6 @@ export function exportAll() {
 export function importAll(payload) {
   if (!payload || payload.app !== 'ClassMapper') throw new Error('Not a ClassMapper backup file');
   for (const [key, val] of Object.entries(payload.data ?? {})) {
-    if (key === KEYS.API_KEY) continue;
-    write(key, val);
+    if (BACKUP_KEYS.includes(key)) write(key, val);
   }
 }

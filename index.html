@@ -291,15 +291,26 @@
     <hr>
 
     <h3>Your data</h3>
-    <p class="hint">Everything lives in this browser. Back it up before clearing your browser data.</p>
+    <p class="hint">
+      Backs up your classes, building corrections, and preferences — not your API key,
+      which stays only on this device. Everything lives in your browser's local storage,
+      so back this up before clearing your browser data or switching phones.
+    </p>
     <div class="row">
-      <button id="btn-export" class="btn btn--sm">Export backup</button>
-      <label class="btn btn--sm">Import backup
+      <button id="btn-export" class="btn btn--sm">Download backup</button>
+      <button id="btn-copy-backup" class="btn btn--sm">Copy backup to clipboard</button>
+    </div>
+    <div class="row">
+      <label class="btn btn--sm">Restore from file
         <input type="file" id="file-restore" accept="application/json" hidden>
       </label>
+      <button id="btn-paste-restore" class="btn btn--sm">Paste backup to restore</button>
       <button id="btn-wipe" class="btn btn--danger btn--sm">Delete everything</button>
     </div>
     <div id="data-feedback" class="feedback"></div>
+    <textarea id="backup-paste" class="backup-paste" hidden
+      placeholder="Paste a ClassMapper backup here, then tap Restore"></textarea>
+    <button id="btn-paste-restore-confirm" class="btn btn--primary btn--sm" hidden>Restore</button>
 
     <p class="hint">
       If the app ever looks broken or stuck on an old version, clear the offline
