@@ -91,6 +91,9 @@ estimate and labels it as approximate.
 
 ## Features
 
+- **First-run welcome tour** — a short 3-step guide the first time you open the app:
+  what it does, what each button in the top bar means, then a prompt to add your
+  schedule. Reopen it anytime from Settings → "Show welcome guide"
 - **Next class card** — course, time, building, room, walk time, and a leave-by time
 - **Turn-by-turn directions** along actual campus walkways
 - **Full-day route** — chains every class today, with total distance and free gaps.
