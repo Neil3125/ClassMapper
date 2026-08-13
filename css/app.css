@@ -1,42 +1,204 @@
-/* ClassMapper — Tuskegee crimson & gold, map-first layout */
+/* ClassMapper — Tuskegee crimson & gold, departure-board layout.
+ *
+ * The design idea: this is read at a glance, outdoors, while walking. So the
+ * countdown to "leave now" is the hero, set in a condensed signage face, and
+ * colour is spent only on urgency — the ramp runs neutral → gold → crimson,
+ * landing on the university's own two colours exactly when it matters.
+ *
+ * Token layering, in order of increasing specificity:
+ *   :root                        light theme (default)
+ *   @media (prefers-color-scheme: dark) + html:not([data-theme="light"])
+ *   html[data-theme="dark"]      explicit dark override
+ *   html[data-contrast="high"]   high contrast, layered on either theme
+ */
+
+/* Self-hosted: no CDN, so offline mode keeps working. Latin subset only. */
+@font-face {
+  font-family: 'Barlow Condensed';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../vendor/fonts/barlow-condensed-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Barlow Condensed';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../vendor/fonts/barlow-condensed-700.woff2') format('woff2');
+}
 
 :root {
   --crimson: #8f1d21;
   --crimson-dark: #6e1418;
-  --gold: #c9a227;
+  /* Deep enough to clear AA as text on white — the bright gold below is for
+     fills and pins, where it sits under dark ink instead. */
+  --gold: #8a6b00;
+  --gold-bright: #c9a227;
   --gold-soft: #f0d98a;
   --ink: #1a1613;
   --ink-soft: #5d554e;
   --paper: #fbf9f6;
+  --surface: #ffffff;
+  --surface-2: #f3efe9;
   --line: #e2dcd4;
   --good: #1f7a4d;
   --bad: #b3261e;
   --warn: #8a5a00;
   --shadow: 0 6px 24px rgba(26, 22, 19, 0.16);
-  --radius: 14px;
+  --shadow-lg: 0 12px 40px rgba(26, 22, 19, 0.2);
+  --radius: 16px;
+  --radius-sm: 10px;
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
-  --focus: var(--gold);
+  --focus: #0b57d0;
   --text-scale: 1;
+
+  --display: 'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
+  --on-accent: #ffffff;
+
+  /* Urgency ramp. Neutral while there's time — colour means something. */
+  --urgent-ample: var(--ink);
+  --urgent-soon: var(--gold);
+  --urgent-now: var(--crimson);
+
+  --tile-filter: none;
+  --map-bg: #e8e4dd;
+
+  --topbar-bg: linear-gradient(180deg, #8f1d21 0%, #7c1a1d 100%);
+  --topbar-ink: #ffffff;
+  --topbar-line: rgba(0,0,0,0.25);
+  --topbar-btn: rgba(255,255,255,0.14);
+  --topbar-btn-line: rgba(255,255,255,0.3);
 }
 
-/* High contrast: darker ink, pure-white ground, stronger lines and a deeper
-   crimson so text on it clears WCAG AA. Only the tokens change — no component
-   rule needs to know this mode exists. */
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) {
+    --crimson: #e8636a;
+    --crimson-dark: #c0454c;
+    --gold: #e8c65a;
+    --gold-bright: #f0d98a;
+    --gold-soft: #6b5615;
+    --ink: #f2ede7;
+    --ink-soft: #a9a099;
+    --paper: #16130f;
+    --surface: #211d18;
+    --surface-2: #2b2620;
+    --line: #3a342d;
+    --good: #4bbd85;
+    --bad: #ff8a80;
+    --warn: #e0b657;
+    --shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.6);
+    --focus: #8ab4f8;
+    --urgent-ample: var(--ink);
+    --urgent-soon: var(--gold);
+    --urgent-now: var(--crimson);
+    /* Dim the OSM tiles rather than swapping in a second tile host — a new host
+       would be another network dependency and would invalidate the tile cache. */
+    --tile-filter: brightness(0.68) saturate(0.75) contrast(1.05) hue-rotate(185deg) invert(0.92);
+    --map-bg: #16130f;
+    --topbar-bg: linear-gradient(180deg, #241f19 0%, #1b1712 100%);
+    --topbar-ink: #f2ede7;
+    --topbar-line: #3a342d;
+    --topbar-btn: rgba(255,255,255,0.08);
+    --topbar-btn-line: rgba(255,255,255,0.16);
+  }
+}
+
+html[data-theme="dark"] {
+  --crimson: #e8636a;
+  --crimson-dark: #c0454c;
+  --gold: #e8c65a;
+  --gold-bright: #f0d98a;
+  --gold-soft: #6b5615;
+  --ink: #f2ede7;
+  --ink-soft: #a9a099;
+  --paper: #16130f;
+  --surface: #211d18;
+  --surface-2: #2b2620;
+  --line: #3a342d;
+  --good: #4bbd85;
+  --bad: #ff8a80;
+  --warn: #e0b657;
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.6);
+  --on-accent: #16130f;
+  --focus: #8ab4f8;
+  --urgent-ample: var(--ink);
+  --urgent-soon: var(--gold);
+  --urgent-now: var(--crimson);
+  --tile-filter: brightness(0.68) saturate(0.75) contrast(1.05) hue-rotate(185deg) invert(0.92);
+  --map-bg: #16130f;
+  --topbar-bg: linear-gradient(180deg, #241f19 0%, #1b1712 100%);
+  --topbar-ink: #f2ede7;
+  --topbar-line: #3a342d;
+  --topbar-btn: rgba(255,255,255,0.08);
+  --topbar-btn-line: rgba(255,255,255,0.16);
+}
+
+/* High contrast layers on top of whichever theme is active. */
 html[data-contrast="high"] {
   --crimson: #6b0f13;
   --crimson-dark: #4d0a0d;
-  --gold: #8a6a00;
+  --gold: #6b5200;
+  --gold-bright: #8a6a00;
   --gold-soft: #ffe9a8;
   --ink: #000;
-  --ink-soft: #33302c;
+  --ink-soft: #2a2724;
   --paper: #fff;
-  --line: #7a736b;
+  --surface: #fff;
+  --surface-2: #f0eeea;
+  --line: #6b645c;
   --good: #12603a;
   --bad: #8f1710;
-  --warn: #6b4600;
+  --warn: #5c3c00;
   --focus: #0b57d0;
+  --on-accent: #ffffff;
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* Dark + high contrast. Explicit selector first; the auto case has to sit
+   inside the media query or `:not([data-theme="light"])` would also match a
+   light-mode page that simply has no data-theme attribute set. */
+html[data-contrast="high"][data-theme="dark"] {
+  --crimson: #ff9ea3;
+  --crimson-dark: #ffc4c7;
+  --gold: #ffd76a;
+  --gold-bright: #ffe9a8;
+  --gold-soft: #4d3d0a;
+  --ink: #fff;
+  --ink-soft: #ded8d2;
+  --paper: #000;
+  --surface: #0d0b09;
+  --surface-2: #1a1714;
+  --line: #8a827a;
+  --good: #6ee7a8;
+  --bad: #ffb3ad;
+  --warn: #ffd76a;
+  --focus: #8ab4f8;
+  --on-accent: #000000;
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-contrast="high"]:not([data-theme="light"]) {
+    --crimson: #ff9ea3;
+    --crimson-dark: #ffc4c7;
+    --gold: #ffd76a;
+    --gold-bright: #ffe9a8;
+    --gold-soft: #4d3d0a;
+    --ink: #fff;
+    --ink-soft: #ded8d2;
+    --paper: #000;
+    --surface: #0d0b09;
+    --surface-2: #1a1714;
+    --line: #8a827a;
+    --good: #6ee7a8;
+    --bad: #ffb3ad;
+    --warn: #ffd76a;
+    --focus: #8ab4f8;
+    --on-accent: #000000;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -76,7 +238,9 @@ html, body {
   -webkit-text-size-adjust: 100%;
 }
 
-#map { position: absolute; inset: 0; z-index: 0; background: #e8e4dd; }
+#map { position: absolute; inset: 0; z-index: 0; background: var(--map-bg); }
+/* Dark mode dims the tiles only — route and pins stay saturated on top. */
+.leaflet-tile-pane { filter: var(--tile-filter); }
 
 /* ---------- top bar ---------- */
 
@@ -89,9 +253,10 @@ html, body {
   justify-content: space-between;
   gap: 8px;
   padding: calc(8px + var(--safe-t)) 10px 8px;
-  background: linear-gradient(180deg, rgba(143, 29, 33, 0.97), rgba(143, 29, 33, 0.88));
-  color: #fff;
+  background: var(--topbar-bg);
+  color: var(--topbar-ink);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  border-bottom: 1px solid var(--topbar-line);
 }
 
 .topbar__title {
@@ -113,9 +278,9 @@ html, body {
 
 .icon-btn {
   appearance: none;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  border: 1px solid var(--topbar-btn-line);
+  background: var(--topbar-btn);
+  color: currentColor;
   font-size: 1.05rem;
   line-height: 1;
   width: 42px; height: 42px;
@@ -126,9 +291,9 @@ html, body {
   flex-shrink: 0;
 }
 .icon-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
-.icon-btn:hover { background: rgba(255, 255, 255, 0.24); }
+.icon-btn:hover { background: color-mix(in srgb, currentColor 18%, transparent); }
 .icon-btn:active { transform: translateY(1px); }
-.icon-btn[aria-pressed="true"] { background: var(--gold); color: var(--crimson-dark); border-color: var(--gold); }
+.icon-btn[aria-pressed="true"] { background: var(--gold-bright); color: #2a1f05; border-color: var(--gold-bright); }
 
 /* ---------- pin-drop banner ---------- */
 
@@ -151,34 +316,59 @@ html, body {
 
 /* ---------- day route legend ---------- */
 
-.day-legend {
+.mapstatus {
   position: absolute;
-  top: calc(56px + var(--safe-t) + 8px);
+  top: calc(58px + var(--safe-t) + 8px);
   left: 10px; right: 10px;
   z-index: 550;
   max-width: 560px;
   margin: 0 auto;
-  background: rgba(251, 249, 246, 0.97);
-  backdrop-filter: blur(8px);
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  backdrop-filter: blur(12px);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-left: 3px solid var(--crimson);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
   padding: 10px 12px;
   max-height: 42vh;
   overflow-y: auto;
 }
 
-.day-legend__head {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 8px; margin-bottom: 6px;
+.mapstatus__head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 8px;
 }
-.day-legend__title { font-weight: 700; font-size: 0.85rem; color: var(--crimson); }
-.day-legend__actions { display: flex; align-items: center; gap: 4px; }
-.day-legend__actions .icon-btn {
-  width: 30px; height: 30px; font-size: 0.85rem;
-  background: #efe9e0; color: var(--ink); border-color: var(--line);
+.mapstatus__titles { display: flex; flex-direction: column; min-width: 0; }
+.mapstatus__eyebrow {
+  font-family: var(--display);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--crimson);
 }
-.day-legend__actions .icon-btn:hover { background: #e6dfd4; }
+.mapstatus__title {
+  font-family: var(--display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mapstatus__meta {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.mapstatus__actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.mapstatus__actions .icon-btn {
+  width: 32px; height: 32px;
+  background: var(--surface-2); color: var(--ink); border-color: var(--line);
+}
+.mapstatus__actions .icon-btn:hover { background: var(--line); }
+.mapstatus__actions .icon-btn svg { width: 17px; height: 17px; }
+.mapstatus .openin { margin-top: 8px; }
 
 .dayleg-list { list-style: none; margin: 0; padding: 0; }
 .dayleg {
@@ -213,7 +403,7 @@ html, body {
   left: 10px; right: 10px;
   bottom: calc(10px + var(--safe-b));
   z-index: 500;
-  background: rgba(251, 249, 246, 0.97);
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
   backdrop-filter: blur(8px);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -245,8 +435,8 @@ html, body {
   box-sizing: border-box;
 }
 .nextcard--collapsed .nextcard__toggle { border-bottom-color: transparent; }
-.nextcard__toggle:hover { background: rgba(26, 22, 19, 0.03); }
-.nextcard__toggle:active { background: rgba(26, 22, 19, 0.06); }
+.nextcard__toggle:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.nextcard__toggle:active { background: color-mix(in srgb, var(--ink) 8%, transparent); }
 .nextcard__toggle-summary {
   flex: 1;
   min-width: 0;
@@ -271,22 +461,138 @@ html, body {
 .nextcard__empty h2 { margin: 0 0 4px; font-size: 1.05rem; }
 .nextcard__empty p { margin: 0 0 12px; color: var(--ink-soft); font-size: 0.9rem; }
 
-.nextcard__label {
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.09em;
-  color: var(--crimson);
-  font-weight: 700;
-}
-.nextcard__course {
-  display: flex; align-items: baseline; justify-content: space-between;
-  gap: 10px; margin-top: 3px;
-}
-.nextcard__course > span:first-child { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.2px; }
-.nextcard__time { font-size: 1rem; font-weight: 600; color: var(--ink-soft); white-space: nowrap; }
-.nextcard__where { color: var(--ink-soft); font-size: 0.88rem; margin-top: 2px; }
-.nextcard__walk { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .nextcard__note { margin-top: 8px; font-size: 0.78rem; color: var(--warn); }
+
+/* ---------- the board (signature element) ---------- */
+
+/* Urgency is expressed once, on the board, and inherited by everything in it. */
+.board { --urgency: var(--urgent-ample); }
+.board.is-soon { --urgency: var(--urgent-soon); }
+.board.is-now  { --urgency: var(--urgent-now); }
+
+.board__eyebrow {
+  display: flex; align-items: baseline; gap: 8px;
+  font-family: var(--display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--crimson);
+  min-width: 0;
+}
+.board__course {
+  color: var(--ink-soft);
+  letter-spacing: 0.08em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.board__main {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-top: 6px;
+}
+
+.board__count {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas: 'label label' 'digits unit';
+  align-items: baseline;
+  column-gap: 6px;
+  flex-shrink: 0;
+}
+.board__countlabel {
+  grid-area: label;
+  font-family: var(--display);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.board__digits {
+  grid-area: digits;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 4.1rem;
+  line-height: 0.85;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--urgency);
+}
+.board__unit {
+  grid-area: unit;
+  font-family: var(--display);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--urgency);
+}
+/* "Now" / "Late" read as words, not a number — drop the size so they fit. */
+.board__digits.is-word { font-size: 2.3rem; letter-spacing: 0.01em; }
+
+.board__detail { min-width: 0; flex: 1; padding-top: 2px; }
+.board__at {
+  font-family: var(--display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.board__where {
+  font-size: 0.86rem;
+  color: var(--ink-soft);
+  margin-top: 3px;
+  line-height: 1.3;
+}
+.board__walk {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Drains toward zero as leave-time approaches. */
+.board__bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+  margin-top: 12px;
+}
+.board__bar > span {
+  display: block;
+  height: 100%;
+  width: 100%;
+  border-radius: inherit;
+  background: var(--urgency);
+  transform-origin: left center;
+  transition: transform 0.6s ease;
+}
+
+.board__leave {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--urgency);
+  margin-top: 7px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The one flourish: the numerals flip like a split-flap board when the
+   minute changes. Killed entirely under prefers-reduced-motion. */
+@keyframes board-flip {
+  0%   { transform: rotateX(0deg);   opacity: 1; }
+  45%  { transform: rotateX(-88deg); opacity: 0.35; }
+  55%  { transform: rotateX(88deg);  opacity: 0.35; }
+  100% { transform: rotateX(0deg);   opacity: 1; }
+}
+.board__digits.is-flipping {
+  animation: board-flip 0.42s ease-in-out;
+  transform-origin: center center;
+  display: inline-block;
+}
 
 .openin { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
 .openin__label { font-size: 0.78rem; color: var(--ink-soft); margin-right: 2px; }
@@ -295,28 +601,28 @@ html, body {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--crimson);
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 6px 12px;
   text-decoration: none;
 }
-.openin__btn:hover { background: #fdf7f7; border-color: var(--crimson); }
+.openin__btn:hover { background: color-mix(in srgb, var(--crimson) 8%, var(--surface)); border-color: var(--crimson); }
 .openin__btn:active { transform: translateY(1px); }
 .item__actions .openin__btn { padding: 6px 10px; font-size: 0.78rem; }
 
 .pill {
   display: inline-block;
-  background: #efe9e0;
+  background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 4px 11px;
   font-size: 0.82rem;
   font-weight: 600;
 }
-.pill--accent { background: var(--crimson); border-color: var(--crimson); color: #fff; }
-.pill--late { background: var(--bad); border-color: var(--bad); color: #fff; }
-.pill--now { background: var(--good); border-color: var(--good); color: #fff; }
+.pill--accent { background: var(--crimson); border-color: var(--crimson); color: var(--on-accent); }
+.pill--late { background: var(--bad); border-color: var(--bad); color: var(--on-accent); }
+.pill--now { background: var(--good); border-color: var(--good); color: var(--on-accent); }
 
 .steps { margin-top: 10px; font-size: 0.85rem; }
 .steps summary { cursor: pointer; color: var(--crimson); font-weight: 600; }
@@ -325,34 +631,99 @@ html, body {
 
 /* ---------- map pins ---------- */
 
+/* Round "stop" markers rather than teardrops — this is a board of numbered
+   stops, and a circle sits more honestly over the exact coordinate. */
 .cm-pin-wrap { background: none; border: none; }
 .cm-pin {
-  width: 30px; height: 30px;
-  border-radius: 50% 50% 50% 4px;
-  transform: rotate(-45deg);
+  position: relative;
+  width: 28px; height: 28px;
+  border-radius: 50%;
   display: grid; place-items: center;
-  border: 2px solid #fff;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-  font-weight: 700; font-size: 0.8rem;
+  border: 2px solid var(--surface);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
-.cm-pin span { transform: rotate(45deg); }
-.cm-pin--next { background: var(--crimson); color: #fff; width: 36px; height: 36px; font-size: 0.9rem; }
-.cm-pin--later { background: var(--gold); color: var(--crimson-dark); }
-.cm-pin--done { background: #b6afa6; color: #fff; }
+.cm-pin--later { background: var(--gold-bright); color: #2a1f05; }
+.cm-pin--done {
+  background: var(--surface);
+  color: var(--ink-soft);
+  border-color: var(--line);
+  opacity: 0.75;
+  width: 22px; height: 22px;
+  font-size: 0.78rem;
+}
+.cm-pin--next,
+.cm-pin--find {
+  width: 38px; height: 38px;
+  font-size: 1.15rem;
+  background: var(--crimson);
+  color: var(--on-accent);
+  border-width: 3px;
+}
+.cm-pin--find { background: var(--gold-bright); color: #2a1f05; }
 
-.cm-route { stroke: var(--crimson); stroke-dasharray: 1 0; }
-.cm-me { stroke: #fff; fill: #1a73e8; fill-opacity: 1; }
-.cm-me-accuracy { stroke: #1a73e8; fill: #1a73e8; fill-opacity: 0.12; }
+/* A soft halo on the one you're heading to, so it reads instantly. */
+.cm-pin--next::after,
+.cm-pin--find::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  opacity: 0;
+  animation: pin-pulse 2.4s ease-out infinite;
+}
+@keyframes pin-pulse {
+  0%   { transform: scale(0.75); opacity: 0.55; }
+  70%  { transform: scale(1.25); opacity: 0; }
+  100% { transform: scale(1.25); opacity: 0; }
+}
+
+/* Two stacked strokes: a casing underneath so the line stays readable over
+   both street tiles and satellite imagery, and the crimson core on top. */
+.cm-route-casing {
+  stroke: var(--surface);
+  stroke-opacity: 0.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.cm-route {
+  stroke: var(--crimson);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.cm-route--active {
+  stroke-dasharray: 10 14;
+  animation: route-flow 1.1s linear infinite;
+}
+@keyframes route-flow { to { stroke-dashoffset: -24; } }
+
+.cm-me { stroke: var(--surface); stroke-width: 3; fill: #1a73e8; fill-opacity: 1; }
+.cm-me-accuracy { stroke: #1a73e8; stroke-opacity: 0.35; fill: #1a73e8; fill-opacity: 0.12; }
 .cm-picking { cursor: crosshair !important; }
 
 .leaflet-control-attribution { font-size: 9px; }
+.leaflet-control-attribution,
+.leaflet-control-attribution a { color: var(--ink-soft); }
+.leaflet-control-attribution { background: color-mix(in srgb, var(--surface) 80%, transparent) !important; }
+.leaflet-bar a {
+  background: var(--surface) !important;
+  color: var(--ink) !important;
+  border-bottom-color: var(--line) !important;
+}
+.leaflet-bar a:hover { background: var(--surface-2) !important; }
 .leaflet-bottom.leaflet-right { margin-bottom: calc(56vh * 0 + 4px); }
 
 /* ---------- panels ---------- */
 
 .scrim {
   position: absolute; inset: 0; z-index: 900;
-  background: rgba(26, 22, 19, 0.4);
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
 }
 
 .panel {
@@ -362,18 +733,55 @@ html, body {
   width: min(430px, 100%);
   background: var(--paper);
   display: flex; flex-direction: column;
-  box-shadow: -6px 0 24px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-lg);
 }
 
+/* Was a solid crimson slab. Now the ground colour with a hairline and a thin
+   crimson accent — the brand as punctuation rather than a block of paint. */
 .panel__head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: calc(12px + var(--safe-t)) 14px 12px;
-  background: var(--crimson);
-  color: #fff;
+  gap: 10px;
+  padding: calc(14px + var(--safe-t)) 16px 12px;
+  background: var(--surface);
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
   flex-shrink: 0;
+  position: relative;
 }
-.panel__head h2 { margin: 0; font-size: 1.05rem; }
-.panel__body { padding: 14px; overflow-y: auto; flex: 1; padding-bottom: calc(20px + var(--safe-b)); }
+.panel__head::after {
+  content: '';
+  position: absolute;
+  left: 16px; bottom: -1px;
+  width: 34px; height: 3px;
+  background: var(--crimson);
+  border-radius: 2px;
+}
+.panel__head h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.panel__head .icon-btn {
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--ink);
+}
+.panel__head .icon-btn:hover { background: var(--line); }
+
+.panel__body { padding: 16px; overflow-y: auto; flex: 1; padding-bottom: calc(20px + var(--safe-b)); }
+
+/* Settings sections: a small uppercase eyebrow instead of a run of h3 + hr. */
+.panel__body h3 {
+  font-family: var(--display);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--crimson);
+  margin: 0 0 6px;
+}
 .panel__body h3 { margin: 0 0 4px; font-size: 0.95rem; }
 .panel__body hr { border: none; border-top: 1px solid var(--line); margin: 20px 0 16px; }
 
@@ -401,7 +809,7 @@ input[type="text"], input[type="password"], input:not([type]), select {
   font-size: 1rem;
   font-family: inherit;
   color: var(--ink);
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 9px;
 }
@@ -415,16 +823,16 @@ input:focus, select:focus { outline: 2px solid var(--gold); outline-offset: 1px;
   padding: 10px 15px;
   border-radius: 9px;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   cursor: pointer;
 }
-.btn:hover { background: #f3efe9; }
+.btn:hover { background: var(--surface-2); }
 .btn:active { transform: translateY(1px); }
-.btn--primary { background: var(--crimson); border-color: var(--crimson); color: #fff; }
+.btn--primary { background: var(--crimson); border-color: var(--crimson); color: var(--on-accent); }
 .btn--primary:hover { background: var(--crimson-dark); }
-.btn--danger { background: #fff; border-color: var(--bad); color: var(--bad); }
-.btn--danger:hover { background: #fdeceb; }
+.btn--danger { background: var(--surface); border-color: var(--bad); color: var(--bad); }
+.btn--danger:hover { background: color-mix(in srgb, var(--bad) 12%, var(--surface)); }
 .btn--ghost { background: transparent; border-color: transparent; }
 .btn--sm { padding: 7px 11px; font-size: 0.82rem; }
 .btn--block { display: block; width: 100%; margin-top: 12px; }
@@ -440,22 +848,25 @@ fieldset.days legend { font-size: 0.78rem; font-weight: 600; color: var(--ink-so
 .day-chip {
   appearance: none;
   border: 1px solid var(--line);
-  background: #fff;
-  border-radius: 8px;
-  width: 40px; height: 38px;
-  font: inherit; font-weight: 700; font-size: 0.85rem;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  width: 40px; height: 40px;
+  font-family: var(--display);
+  font-weight: 700; font-size: 1.05rem;
   cursor: pointer;
   color: var(--ink-soft);
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
-.day-chip[aria-pressed="true"] { background: var(--crimson); border-color: var(--crimson); color: #fff; }
+.day-chip:hover { background: var(--surface-2); color: var(--ink); }
+.day-chip[aria-pressed="true"] { background: var(--crimson); border-color: var(--crimson); color: var(--on-accent); }
 
 .feedback { font-size: 0.82rem; margin: -4px 0 12px; min-height: 1em; }
 .feedback--good { color: var(--good); }
 .feedback--bad { color: var(--bad); }
 .feedback--warn {
   color: var(--warn);
-  background: #fdf6e3;
-  border: 1px solid var(--gold-soft);
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--surface));
   padding: 10px;
   border-radius: 9px;
   margin-bottom: 14px;
@@ -468,36 +879,56 @@ fieldset.days legend { font-size: 0.78rem; font-weight: 600; color: var(--ink-so
 
 .classlist li, .daylist li {
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--surface);
   border-radius: 11px;
   padding: 10px 12px;
   margin-bottom: 8px;
 }
-.classlist li.is-bad { border-color: var(--bad); background: #fdf4f3; }
+.classlist li.is-bad {
+  border-color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 8%, var(--surface));
+}
 .daylist li.is-gap {
   background: transparent;
   border-style: dashed;
   color: var(--ink-soft);
   font-size: 0.82rem;
   text-align: center;
-  padding: 6px;
+  padding: 8px;
 }
-.daylist li.is-next { border-color: var(--crimson); border-width: 2px; }
+/* The class you're heading to gets a crimson spine rather than a full outline. */
+.daylist li.is-next {
+  border-color: var(--line);
+  border-left: 3px solid var(--crimson);
+  background: color-mix(in srgb, var(--crimson) 5%, var(--surface));
+}
 
 .item__top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
-.item__code { font-weight: 700; }
-.item__time { font-size: 0.84rem; color: var(--ink-soft); white-space: nowrap; }
+.item__code {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: 0.01em;
+}
+.item__time {
+  font-family: var(--display);
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 .item__meta { font-size: 0.82rem; color: var(--ink-soft); margin-top: 2px; }
 .item__actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .item__badge {
   display: inline-block; font-size: 0.68rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.06em;
   padding: 2px 7px; border-radius: 999px;
-  background: var(--bad); color: #fff;
+  background: var(--bad); color: var(--on-accent);
 }
 
 .summary {
-  background: #fff; border: 1px solid var(--line); border-radius: 11px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 11px;
   padding: 10px 12px; font-size: 0.88rem;
 }
 .summary strong { color: var(--crimson); }
@@ -517,12 +948,12 @@ fieldset.days legend { font-size: 0.78rem; font-weight: 600; color: var(--ink-so
   padding: 28px 16px;
   text-align: center;
   cursor: pointer;
-  background: #fff;
+  background: var(--surface);
   font-weight: 400;
   color: var(--ink);
   margin-bottom: 8px;
 }
-.dropzone:hover, .dropzone.is-over { border-color: var(--crimson); background: #fdf7f7; }
+.dropzone:hover, .dropzone.is-over { border-color: var(--crimson); background: color-mix(in srgb, var(--crimson) 8%, var(--surface)); }
 .dropzone__icon { color: var(--crimson); display: inline-flex; }
 
 .backup-paste {
@@ -534,7 +965,7 @@ fieldset.days legend { font-size: 0.78rem; font-weight: 600; color: var(--ink-so
   font-family: ui-monospace, Consolas, monospace;
   font-size: 0.78rem;
   color: var(--ink);
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 9px;
   resize: vertical;
@@ -639,4 +1070,10 @@ fieldset.days legend { font-size: 0.78rem; font-weight: 600; color: var(--ink-so
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  /* Kill the decorative loops outright rather than running them at 0.01ms,
+     which would still repaint forever. */
+  .cm-route--active { animation: none !important; stroke-dasharray: none !important; }
+  .cm-pin--next::after,
+  .cm-pin--find::after { animation: none !important; opacity: 0 !important; }
+  .board__digits.is-flipping { animation: none !important; }
 }

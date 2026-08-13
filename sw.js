@@ -8,7 +8,7 @@
 // Map tiles are cache-first — they never change and re-downloading them on
 // campus wifi is a waste.
 
-const VERSION = 'v4';
+const VERSION = 'v5';
 const SHELL = `classmapper-shell-${VERSION}`;
 const TILES = `classmapper-tiles-${VERSION}`;
 const TILE_LIMIT = 600;
@@ -32,6 +32,8 @@ const SHELL_FILES = [
   'manifest.webmanifest',
   'icons/icon-192.png',
   'icons/icon-512.png',
+  'vendor/fonts/barlow-condensed-600.woff2',
+  'vendor/fonts/barlow-condensed-700.woff2',
   'vendor/leaflet/leaflet.js',
   'vendor/leaflet/leaflet.css',
   'vendor/leaflet/images/marker-icon.png',

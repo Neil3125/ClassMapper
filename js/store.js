@@ -46,6 +46,7 @@ export const DEFAULT_SETTINGS = {
   offline: false,        // opt-in service worker; see registerServiceWorker()
   cardCollapsed: false,  // next-class card hidden down to its handle bar
   textScale: 1,          // root font-size multiplier; layout is all rem
+  theme: 'auto',         // 'auto' follows the OS | 'light' | 'dark'
   highContrast: false,
   semesterStart: '',     // 'YYYY-MM-DD' — see schedule.js on why these stay strings
   semesterEnd: '',

@@ -107,18 +107,35 @@ export function renderStops(stops, { onSelect } = {}) {
   }
 }
 
+/**
+ * A route is two stacked polylines: a wide casing underneath and the coloured
+ * core on top. A single stroke disappears against satellite imagery; the
+ * casing keeps it readable over any basemap.
+ * Returns [casing, core] so callers can dispose of both.
+ */
+function routePair(shape, { active = false } = {}) {
+  const casing = L.polyline(shape, {
+    className: 'cm-route-casing',
+    weight: 9,
+    opacity: 1,
+    interactive: false,
+  });
+  const core = L.polyline(shape, {
+    className: `cm-route${active ? ' cm-route--active' : ''}`,
+    weight: 5,
+    opacity: 1,
+    interactive: false,
+  });
+  return [casing, core];
+}
+
 export function drawRoute(shape) {
-  if (routeLine) map.removeLayer(routeLine);
+  if (routeLine) routeLine.forEach((l) => map.removeLayer(l));
   routeLine = null;
   if (!shape?.length) return;
 
-  routeLine = L.polyline(shape, {
-    className: 'cm-route',
-    weight: 5,
-    opacity: 0.9,
-    lineJoin: 'round',
-    lineCap: 'round',
-  }).addTo(map);
+  routeLine = routePair(shape, { active: true });
+  routeLine.forEach((l) => l.addTo(map));
 }
 
 export function clearRoute() {
@@ -129,28 +146,24 @@ export function clearRoute() {
 // view can show, hide, or solo individual legs without disturbing it.
 let legLayers = [];
 
-/** Draw the day route as one polyline per leg, so each can be toggled on its own. */
+/** Draw the day route as one polyline pair per leg, each independently toggleable. */
 export function drawLegs(legs) {
   clearLegs();
   legLayers = legs.map((leg) => {
     if (!leg?.shape?.length) return null;
-    return L.polyline(leg.shape, {
-      className: 'cm-route',
-      weight: 5,
-      opacity: 0.9,
-      lineJoin: 'round',
-      lineCap: 'round',
-    }).addTo(map);
+    const pair = routePair(leg.shape);
+    pair.forEach((l) => l.addTo(map));
+    return pair;
   });
 }
 
 export function clearLegs() {
-  legLayers.forEach((l) => l && map.removeLayer(l));
+  legLayers.forEach((pair) => pair?.forEach((l) => map.removeLayer(l)));
   legLayers = [];
 }
 
 export function setLegVisible(i, visible) {
-  legLayers[i]?.setStyle({ opacity: visible ? 0.9 : 0 });
+  legLayers[i]?.forEach((l) => l.setStyle({ opacity: visible ? 1 : 0 }));
 }
 
 export function showMe(lat, lon, accuracy) {
@@ -194,6 +207,14 @@ export function cancelPick() {
   if (pinDropHandler) map.off('click', pinDropHandler);
   pinDropHandler = null;
   map?.getContainer().classList.remove('cm-picking');
+}
+
+/** Fires on a plain map-background click (not while pin-drop mode is armed). */
+export function onBackgroundClick(handler) {
+  map.on('click', () => {
+    if (pinDropHandler) return; // pin-drop owns this click
+    handler();
+  });
 }
 
 export function invalidate() {

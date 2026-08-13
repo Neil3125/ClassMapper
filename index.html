@@ -39,13 +39,25 @@
 </div>
 
 <!-- Whole-day route legend: toggle legs on/off, or tap one to solo it -->
-<div id="day-legend" class="day-legend" hidden>
-  <div class="day-legend__head">
-    <span class="day-legend__title">Today's route</span>
-    <div class="day-legend__actions">
-      <button id="day-legend-showall" class="btn btn--ghost btn--sm">Show all</button>
-      <button id="day-legend-close" class="icon-btn" aria-label="Close route view"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+<!-- Shown whenever something other than the next class owns the map (a whole-day
+     route, or a building search). Always carries a way back out. -->
+<div id="map-status" class="mapstatus" hidden>
+  <div class="mapstatus__head">
+    <div class="mapstatus__titles">
+      <span id="map-status-eyebrow" class="mapstatus__eyebrow"></span>
+      <span id="map-status-title" class="mapstatus__title"></span>
     </div>
+    <div class="mapstatus__actions">
+      <button id="day-legend-showall" class="btn btn--ghost btn--sm" hidden>Show all</button>
+      <button id="map-status-close" class="icon-btn" aria-label="Back to next class"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+  </div>
+  <div id="map-status-meta" class="mapstatus__meta" hidden></div>
+  <div id="map-status-links" class="openin" hidden>
+    <span class="openin__label">Open in</span>
+    <a id="find-google" class="openin__btn" target="_blank" rel="noopener">Google Maps</a>
+    <a id="find-apple" class="openin__btn" target="_blank" rel="noopener">Apple Maps</a>
+    <a id="find-waze" class="openin__btn" target="_blank" rel="noopener">Waze</a>
   </div>
   <ul id="day-legend-list" class="dayleg-list"></ul>
 </div>
@@ -68,15 +80,29 @@
     </div>
 
     <div class="nextcard__body" id="nextcard-body" hidden>
-      <div class="nextcard__label" id="next-label">Next class</div>
-      <div class="nextcard__course">
-        <span id="next-code">—</span>
-        <span class="nextcard__time" id="next-time"></span>
-      </div>
-      <div class="nextcard__where" id="next-where"></div>
-      <div class="nextcard__walk">
-        <span id="next-walk" class="pill"></span>
-        <span id="next-leave" class="pill pill--accent"></span>
+      <div class="board" id="next-board">
+        <div class="board__eyebrow">
+          <span id="next-label">Next class</span>
+          <span class="board__course" id="next-code">—</span>
+        </div>
+
+        <div class="board__main">
+          <!-- The hero: minutes until you must leave. Everything else is support. -->
+          <div class="board__count" id="next-count">
+            <span class="board__countlabel" id="next-countlabel">Leave in</span>
+            <span class="board__digits" id="next-digits">--</span>
+            <span class="board__unit" id="next-unit">min</span>
+          </div>
+
+          <div class="board__detail">
+            <div class="board__at" id="next-time"></div>
+            <div class="board__where" id="next-where"></div>
+            <div class="board__walk" id="next-walk"></div>
+          </div>
+        </div>
+
+        <div class="board__bar" id="next-bar" role="presentation"><span id="next-bar-fill"></span></div>
+        <div class="board__leave" id="next-leave"></div>
       </div>
       <div class="nextcard__note" id="next-note" hidden></div>
 
@@ -284,6 +310,13 @@
 
     <h3>Display</h3>
     <p class="hint">Bigger text and stronger contrast help when you're reading this in direct sun.</p>
+    <label>Appearance
+      <select id="input-theme">
+        <option value="auto">Match my phone</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </label>
     <label>Text size
       <select id="input-textscale">
         <option value="1">Normal</option>

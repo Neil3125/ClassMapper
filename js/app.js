@@ -16,7 +16,14 @@ const $$ = (sel) => [...document.querySelectorAll(sel)];
 const state = {
   me: null,            // {lat, lon, accuracy} from geolocation
   route: null,         // current route to next class
-  showingDay: false,
+
+  // Exactly one feature owns the map at a time. Previously the day route and
+  // the building search each tracked their own flag, and refresh() only knew
+  // about the day one — so a search result could never be cleared and just sat
+  // on the map until something else happened to overwrite it.
+  mapMode: 'next',     // 'next' | 'day' | 'find'
+  mapContext: null,    // { building } for 'find'; day route uses dayLegs below
+
   dayLegs: null,       // [{fromLabel, toLabel, meters, minutes, shape, approximate}], when shown
   dayLegVisible: [],   // bool per leg, parallel to dayLegs
   drafts: null,        // parsed import awaiting review
@@ -25,7 +32,6 @@ const state = {
   panelOpener: null,   // element to hand focus back to when a panel closes
   viewDay: null,       // day index being viewed in the Today panel; null = today
   classFilter: '',     // class-list search text
-  findTarget: null,    // building being routed to from "Find a building"
 };
 
 // ---------- boot ----------
@@ -157,8 +163,12 @@ async function refresh() {
   $('#nextcard-empty').hidden = hasClasses;
   $('#nextcard-body').hidden = !hasClasses;
   if (!hasClasses) {
-    M.renderStops([]);
-    M.clearRoute();
+    // Don't wipe a search result just because there are no classes — that was
+    // one of the paths that used to strand the route with no way to clear it.
+    if (state.mapMode === 'next') {
+      M.renderStops([]);
+      M.clearRoute();
+    }
     updateCardSummary('No classes yet');
     return;
   }
@@ -221,9 +231,9 @@ async function refresh() {
 
   if (!b) {
     $('#next-walk').textContent = '';
-    $('#next-leave').textContent = '';
     $('#next-steps').hidden = true;
     setNote('Open My classes and pick a building so I can route you there.');
+    renderBoard({ next, unrouted: 'No building set' });
     announce(`${codeForSr} ${whenForSr}. No building set, so no route.`);
     return;
   }
@@ -233,9 +243,9 @@ async function refresh() {
   const origin = state.me ?? previousStop(now, next);
 
   if (!origin) {
-    $('#next-walk').textContent = 'Walk time needs your location';
-    $('#next-leave').textContent = '';
+    $('#next-walk').textContent = 'Turn on location for a walk time';
     $('#next-steps').hidden = true;
+    renderBoard({ next, unrouted: `Starts ${S.fmtTime(next.cls.startMin)}` });
     announce(`${codeForSr} ${whenForSr}, ${b.name}. Walk time needs your location.`);
     return;
   }
@@ -250,7 +260,7 @@ async function refresh() {
   // The day-route legend owns the map while it's open — leave its lines alone,
   // but keep computing walk time and leave-by below so the card doesn't go
   // stale just because you're looking at the whole day.
-  if (!state.showingDay) M.drawRoute(route.shape);
+  if (state.mapMode === 'next') M.drawRoute(route.shape);
 
   const leaveAt = S.leaveBy(next.startsAt, route.minutes, cfg.bufferMin);
   const minsToLeave = Math.round((leaveAt - now) / 60000);
@@ -259,19 +269,7 @@ async function refresh() {
     ? 'Same building — no walk'
     : `${route.minutes} min walk · ${R.fmtDistance(route.meters)}`;
 
-  const leaveEl = $('#next-leave');
-  leaveEl.classList.remove('pill--late', 'pill--now');
-  if (next.isNow) {
-    leaveEl.textContent = `In progress until ${S.fmtTime(next.cls.endMin)}`;
-    leaveEl.classList.add('pill--now');
-  } else if (minsToLeave <= 0) {
-    leaveEl.textContent = minsToLeave < -1 ? `Leave now — ${Math.abs(minsToLeave)} min behind` : 'Leave now';
-    leaveEl.classList.add('pill--late');
-  } else if (minsToLeave < 60) {
-    leaveEl.textContent = `Leave in ${minsToLeave} min (${fmtClock(leaveAt)})`;
-  } else {
-    leaveEl.textContent = `Leave by ${fmtClock(leaveAt)}`;
-  }
+  renderBoard({ next, leaveAt, minsToLeave, walkMin: route.minutes });
 
   const steps = $('#next-steps');
   if (route.steps?.length) {
@@ -330,34 +328,197 @@ async function findBuilding() {
   if (!building) return;
 
   closePanels();
-  state.findTarget = building;
-  state.showingDay = false;
-  M.clearLegs();
-  $('#day-legend').hidden = true;
+  enterMapMode('find', { building });
 
   M.renderStops([
-    { building, label: '★', state: 'next', title: building.name, subtitle: 'Searched' },
+    { building, label: '★', state: 'find', title: building.name, subtitle: 'Searched' },
   ]);
   M.panTo(building);
 
+  // The status bar goes up immediately, before any routing — so there is always
+  // a way out even if the route never resolves.
+  renderMapStatus();
+
   const origin = state.me;
   if (!origin) {
-    toast(`${building.name} — turn on location for a walk time`);
+    setFindMeta('Turn on location for a walk time');
     announce(`Showing ${building.name} on the map`);
     return;
   }
 
-  toast(`Routing to ${building.name}…`);
+  setFindMeta('Finding a walking route…');
   const route = await R.walk(origin, building);
-  if (state.findTarget?.id !== building.id) return; // superseded by another search
+  // Bail if the user has since dismissed this or searched something else.
+  if (state.mapMode !== 'find' || state.mapContext?.building?.id !== building.id) return;
 
   M.drawRoute(route?.shape ?? []);
   M.fitTo([origin, building]);
-  const summary = route
-    ? `${building.name} — ${route.minutes} min walk, ${R.fmtDistance(route.meters)}${route.approximate ? ' (estimated)' : ''}`
-    : building.name;
-  toast(summary);
-  announce(summary);
+  const meta = route
+    ? `${route.minutes} min walk · ${R.fmtDistance(route.meters)}${route.approximate ? ' (estimated)' : ''}`
+    : 'No route available';
+  setFindMeta(meta);
+  announce(`${building.name} — ${meta}`);
+}
+
+function setFindMeta(text) {
+  const el = $('#map-status-meta');
+  el.textContent = text;
+  el.hidden = !text;
+}
+
+// ---------- who owns the map ----------
+
+function enterMapMode(mode, context = null) {
+  // Always tear down whatever the previous owner drew, so modes can't leave
+  // orphaned layers behind each other.
+  M.clearLegs();
+  M.clearRoute();
+  state.dayLegs = null;
+  state.dayLegVisible = [];
+
+  state.mapMode = mode;
+  state.mapContext = context;
+}
+
+/** Hand the map back to the next-class view. The single way out of any mode. */
+function exitMapMode() {
+  if (state.mapMode === 'next') return;
+  enterMapMode('next');
+  $('#map-status').hidden = true;
+  M.renderStops([]);
+  refresh();
+}
+
+function renderMapStatus() {
+  const box = $('#map-status');
+  if (state.mapMode === 'next') {
+    box.hidden = true;
+    return;
+  }
+
+  const isFind = state.mapMode === 'find';
+  $('#map-status-eyebrow').textContent = isFind ? 'Showing' : 'Route';
+  $('#map-status-title').textContent = isFind
+    ? state.mapContext?.building?.name ?? 'Building'
+    : state.mapContext?.label ?? "Today's route";
+
+  $('#day-legend-showall').hidden = isFind;
+  $('#map-status-meta').hidden = !isFind;
+
+  const links = $('#map-status-links');
+  const b = state.mapContext?.building;
+  if (isFind && b) {
+    $('#find-google').href = EXT.googleMapsUrl(b);
+    $('#find-apple').href = EXT.appleMapsUrl(b);
+    $('#find-waze').href = EXT.wazeUrl(b);
+    links.hidden = false;
+  } else {
+    links.hidden = true;
+  }
+
+  box.hidden = false;
+  renderDayLegend();
+}
+
+// ---------- the board ----------
+
+let lastDigits = null;
+
+/**
+ * The countdown is the whole point of this screen, so it gets the hierarchy:
+ * one big number, a draining bar, and colour that only appears once time is
+ * actually short. Urgency is set once on the container and inherited.
+ */
+function renderBoard({ next, leaveAt, minsToLeave, walkMin, unrouted }) {
+  const board = $('#next-board');
+  const digitsEl = $('#next-digits');
+  const unitEl = $('#next-unit');
+  const labelEl = $('#next-countlabel');
+  const leaveEl = $('#next-leave');
+  const fill = $('#next-bar-fill');
+
+  let digits;
+  let unit = 'min';
+  let label = 'Leave in';
+  let urgency = 'ample';
+  let leaveLine;
+
+  // No route available (no building, or no location to route from). Fall back
+  // to counting down to the class itself — never leave stale digits on screen.
+  if (unrouted) {
+    const mins = Math.max(0, Math.round((next.startsAt - new Date()) / 60000));
+    if (next.isNow) {
+      digits = 'NOW';
+      unit = '';
+      label = 'In class';
+      urgency = 'now';
+      leaveLine = `Ends at ${S.fmtTime(next.cls.endMin)}`;
+    } else if (mins < 60) {
+      digits = String(mins);
+      label = 'Starts in';
+      urgency = mins <= 5 ? 'soon' : 'ample';
+      leaveLine = unrouted;
+    } else {
+      const hrs = Math.floor(mins / 60);
+      digits = String(hrs);
+      unit = hrs === 1 ? 'hr' : 'hrs';
+      label = 'Starts in';
+      leaveLine = unrouted;
+    }
+    applyBoard({ board, digitsEl, unitEl, labelEl, leaveEl, fill, digits, unit, label, urgency, leaveLine, pct: 1 });
+    return;
+  }
+
+  if (next.isNow) {
+    digits = 'NOW';
+    unit = '';
+    label = 'In class';
+    urgency = 'now';
+    leaveLine = `Ends at ${S.fmtTime(next.cls.endMin)}`;
+  } else if (minsToLeave <= 0) {
+    const behind = Math.abs(minsToLeave);
+    digits = 'GO';
+    unit = '';
+    label = behind > 1 ? `${behind} min behind` : 'Leave now';
+    urgency = 'now';
+    leaveLine = `${walkMin} min walk · arrive ${fmtClock(new Date(Date.now() + walkMin * 60000))}`;
+  } else if (minsToLeave < 60) {
+    digits = String(minsToLeave);
+    urgency = minsToLeave <= 5 ? 'soon' : 'ample';
+    leaveLine = `Leave by ${fmtClock(leaveAt)}`;
+  } else {
+    const hrs = Math.floor(minsToLeave / 60);
+    digits = String(hrs);
+    unit = hrs === 1 ? 'hr' : 'hrs';
+    leaveLine = `Leave by ${fmtClock(leaveAt)}`;
+  }
+
+  // The bar drains over the last hour of waiting; full when there's ages to go.
+  const pct = next.isNow || minsToLeave <= 0 ? 1 : Math.max(0, Math.min(1, minsToLeave / 60));
+  applyBoard({ board, digitsEl, unitEl, labelEl, leaveEl, fill, digits, unit, label, urgency, leaveLine, pct });
+}
+
+/** The single place the board is actually painted, shared by both code paths. */
+function applyBoard({ board, digitsEl, unitEl, labelEl, leaveEl, fill, digits, unit, label, urgency, leaveLine, pct }) {
+  board.classList.toggle('is-soon', urgency === 'soon');
+  board.classList.toggle('is-now', urgency === 'now');
+  digitsEl.classList.toggle('is-word', !/^\d+$/.test(digits));
+
+  // Split-flap tick, only when the value actually changed — the refresh runs
+  // every 30s and re-animating identical digits would just be noise.
+  if (lastDigits !== null && lastDigits !== digits) {
+    digitsEl.classList.remove('is-flipping');
+    void digitsEl.offsetWidth; // restart the animation
+    digitsEl.classList.add('is-flipping');
+  }
+  lastDigits = digits;
+
+  digitsEl.textContent = digits;
+  unitEl.textContent = unit;
+  unitEl.hidden = !unit;
+  labelEl.textContent = label;
+  leaveEl.textContent = leaveLine;
+  fill.style.transform = `scaleX(${pct})`;
 }
 
 /** Keep the handle bar's one-line summary current, whether or not the card is collapsed. */
@@ -423,13 +584,15 @@ function renderStopsForToday(now, next) {
     }
   }
 
+  // Another mode owns the markers and the viewport right now — the 30s refresh
+  // tick must not quietly redraw over a route the user is still looking at.
+  if (state.mapMode !== 'next') return;
+
   M.renderStops(stops, { onSelect: (s) => M.panTo(s.building) });
 
-  if (!state.showingDay) {
-    const pts = stops.map((s) => s.building).filter(Boolean);
-    if (state.me) pts.push(state.me);
-    if (pts.length) M.fitTo(pts);
-  }
+  const pts = stops.map((s) => s.building).filter(Boolean);
+  if (state.me) pts.push(state.me);
+  if (pts.length) M.fitTo(pts);
 }
 
 // ---------- today panel ----------
@@ -547,9 +710,10 @@ async function showDayRoute() {
     return;
   }
 
-  state.showingDay = true;
-  M.clearRoute();
+  const dayLabel = isToday ? "Today's route" : `${S.DAY_NAMES[date.getDay()]}'s route`;
+  enterMapMode('day', { label: dayLabel });
   closePanels();
+  renderMapStatus();
   toast(`Routing ${isToday ? 'your whole day' : S.DAY_NAMES[date.getDay()]}…`);
 
   // Only start from your live position when the route is for today — on any
@@ -560,7 +724,7 @@ async function showDayRoute() {
   const points = named.map((n) => ({ lat: n.point.lat, lon: n.point.lon }));
 
   const result = await R.chain(points);
-  if (!state.showingDay) return; // closed while the routing call was in flight
+  if (state.mapMode !== 'day') return; // dismissed while the routing call was in flight
 
   const labelFor = (pt) => {
     const match = named.find((n) => Math.abs(n.point.lat - pt.lat) < 1e-6 && Math.abs(n.point.lon - pt.lon) < 1e-6);
@@ -579,7 +743,7 @@ async function showDayRoute() {
 
   M.drawLegs(state.dayLegs);
   M.fitTo(points);
-  renderDayLegend();
+  renderMapStatus();
 
   toast(
     `Whole day: ${R.fmtDistance(result.meters)} of walking, about ${fmtDuration(result.minutes)}` +
@@ -587,22 +751,15 @@ async function showDayRoute() {
   );
 }
 
-function exitDayRoute() {
-  state.showingDay = false;
-  state.dayLegs = null;
-  state.dayLegVisible = [];
-  M.clearLegs();
-  $('#day-legend').hidden = true;
-  refresh();
-}
-
+/** Fills the per-leg toggle list. Visibility of the bar itself is renderMapStatus's job. */
 function renderDayLegend() {
-  const box = $('#day-legend');
+  const list = $('#day-legend-list');
   if (!state.dayLegs?.length) {
-    box.hidden = true;
+    list.innerHTML = '';
+    list.hidden = true;
     return;
   }
-  box.hidden = false;
+  list.hidden = false;
 
   const allVisible = state.dayLegVisible.every(Boolean);
   const soloIndex = !allVisible && state.dayLegVisible.filter(Boolean).length === 1
@@ -653,7 +810,14 @@ function wireDayLegend() {
     renderDayLegend();
   };
 
-  $('#day-legend-close').onclick = exitDayRoute;
+  $('#map-status-close').onclick = exitMapMode;
+
+  // Tapping empty map while a search is up dismisses it — the natural gesture.
+  // Deliberately not for the day route: its per-leg toggles invite map-adjacent
+  // interaction, and dismissing that on a stray tap would be irritating.
+  M.onBackgroundClick(() => {
+    if (state.mapMode === 'find') exitMapMode();
+  });
 }
 
 // ---------- class list & editor ----------
@@ -1059,11 +1223,25 @@ async function saveDrafts() {
  * before first paint avoids a flash of the default theme.
  */
 function applyDisplaySettings() {
-  const { textScale, highContrast } = store.settings();
+  const { textScale, highContrast, theme } = store.settings();
   const root = document.documentElement;
   root.style.setProperty('--text-scale', String(textScale ?? 1));
+
+  // 'auto' leaves the attribute off entirely so the prefers-color-scheme
+  // media query decides. Setting it to "auto" would break those selectors.
+  if (theme === 'light' || theme === 'dark') root.setAttribute('data-theme', theme);
+  else root.removeAttribute('data-theme');
+
   if (highContrast) root.setAttribute('data-contrast', 'high');
   else root.removeAttribute('data-contrast');
+
+  // Keep the browser UI (status bar, address bar) in step with the theme.
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) {
+    const dark = theme === 'dark'
+      || (theme !== 'light' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
+    meta.setAttribute('content', dark ? '#1b1712' : '#8f1d21');
+  }
 }
 
 function wireSettings() {
@@ -1124,6 +1302,11 @@ function wireSettings() {
   };
 
   // --- display ---
+  $('#input-theme').value = cfg.theme ?? 'auto';
+  $('#input-theme').onchange = (e) => {
+    store.saveSettings({ theme: e.target.value });
+    applyDisplaySettings();
+  };
   $('#input-textscale').value = String(cfg.textScale ?? 1);
   $('#toggle-contrast').checked = Boolean(cfg.highContrast);
   $('#input-textscale').onchange = (e) => {
@@ -1467,7 +1650,7 @@ function wirePanels() {
       closePanels();
       M.cancelPick();
       $('#pick-banner').hidden = true;
-      if (state.showingDay) exitDayRoute();
+      exitMapMode(); // dismisses a day route or a building search alike
       return;
     }
 
