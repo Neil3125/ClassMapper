@@ -1553,7 +1553,6 @@ function toggleTheme() {
   const themeInput = $('#input-theme');
   if (themeInput) themeInput.value = next;
   if (navigator.vibrate) navigator.vibrate(15);
-  toast(next === 'dark' ? 'Dark mode' : 'Light mode');
 }
 
 function wireSettings() {
