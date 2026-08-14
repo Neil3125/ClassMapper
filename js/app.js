@@ -32,6 +32,9 @@ const state = {
   panelOpener: null,   // element to hand focus back to when a panel closes
   viewDay: null,       // day index being viewed in the Today panel; null = today
   classFilter: '',     // class-list search text
+  todayView: 'day',    // 'day' | 'week' — which view the Today panel shows
+  lastRouteOrigin: null, // {lat, lon} the walk time was last computed from
+  lastRouteRefreshAt: 0, // Date.now() of that computation
 };
 
 // ---------- boot ----------
@@ -51,6 +54,7 @@ async function boot() {
   // of the app from working.
   for (const [name, fn] of [
     ['day chips', buildDayChips],
+    ['color swatches', buildColorRow],
     ['building list', buildBuildingOptions],
     ['top bar', wireTopbar],
     ['panels', wirePanels],
@@ -59,6 +63,7 @@ async function boot() {
     ['settings', wireSettings],
     ['day route legend', wireDayLegend],
     ['next card toggle', wireNextCardToggle],
+    ['today view tabs', wireTodayViewTabs],
   ]) {
     try {
       fn();
@@ -130,13 +135,34 @@ function startGeolocation() {
     setNote("Live location needs HTTPS. Deploy to GitHub Pages to see your position.");
     return;
   }
+  const MOVE_THRESHOLD_M = 25; // don't recompute for GPS jitter smaller than this
+  const MIN_REFRESH_GAP_MS = 10_000; // ...or more often than this, even if moving
+
   navigator.geolocation.watchPosition(
     (pos) => {
       const { latitude, longitude, accuracy } = pos.coords;
       const first = !state.me;
       state.me = { lat: latitude, lon: longitude, accuracy };
       M.showMe(latitude, longitude, accuracy);
-      if (first) refresh();
+
+      if (first) {
+        state.lastRouteOrigin = state.me;
+        state.lastRouteRefreshAt = Date.now();
+        refresh();
+        return;
+      }
+
+      // Recompute while you're actually walking, not just on the fixed 30s
+      // tick — but only for real movement, and not more than once per
+      // MIN_REFRESH_GAP_MS, so GPS jitter can't spam the routing API.
+      if (state.mapMode !== 'next') return;
+      const movedM = state.lastRouteOrigin ? R.haversine(state.lastRouteOrigin, state.me) : Infinity;
+      const elapsedMs = Date.now() - state.lastRouteRefreshAt;
+      if (movedM >= MOVE_THRESHOLD_M && elapsedMs >= MIN_REFRESH_GAP_MS) {
+        state.lastRouteOrigin = state.me;
+        state.lastRouteRefreshAt = Date.now();
+        refresh();
+      }
     },
     (err) => {
       if (err.code === err.PERMISSION_DENIED) {
@@ -178,6 +204,10 @@ async function refresh() {
   const phase = S.semesterPhase(now, cfg);
   const next = S.nextClass(now, classes, cfg);
   renderStopsForToday(now, next);
+  // Independent of whether `next` resolves to a routable class below — this
+  // just needs the schedule, so it's safe to compute before any of the
+  // early-return paths that follow.
+  renderUpNext(now, classes, cfg);
 
   if (!next) {
     const headline =
@@ -327,11 +357,23 @@ async function findBuilding() {
   const building = await pickBuilding('Find a building', 'Any of the 53 campus buildings.');
   if (!building) return;
 
-  closePanels();
-  enterMapMode('find', { building });
+  // Optional second step: plan from a specific building instead of "from
+  // here." Cancel (relabeled) means the common case — use current location.
+  const fromBuilding = await pickBuilding(
+    'Route from?',
+    'Pick a starting building, or use your current location.',
+    { cancelLabel: 'Use current location' },
+  );
 
+  closePanels();
+  enterMapMode('find', { building, origin: fromBuilding });
+
+  const originPoint = fromBuilding ?? state.me;
   M.renderStops([
     { building, label: '★', state: 'find', title: building.name, subtitle: 'Searched' },
+    ...(fromBuilding
+      ? [{ building: fromBuilding, label: '●', state: 'later', title: fromBuilding.name, subtitle: 'Starting point' }]
+      : []),
   ]);
   M.panTo(building);
 
@@ -339,25 +381,24 @@ async function findBuilding() {
   // a way out even if the route never resolves.
   renderMapStatus();
 
-  const origin = state.me;
-  if (!origin) {
+  if (!originPoint) {
     setFindMeta('Turn on location for a walk time');
     announce(`Showing ${building.name} on the map`);
     return;
   }
 
   setFindMeta('Finding a walking route…');
-  const route = await R.walk(origin, building);
+  const route = await R.walk(originPoint, building);
   // Bail if the user has since dismissed this or searched something else.
   if (state.mapMode !== 'find' || state.mapContext?.building?.id !== building.id) return;
 
   M.drawRoute(route?.shape ?? []);
-  M.fitTo([origin, building]);
+  M.fitTo([originPoint, building]);
   const meta = route
     ? `${route.minutes} min walk · ${R.fmtDistance(route.meters)}${route.approximate ? ' (estimated)' : ''}`
     : 'No route available';
   setFindMeta(meta);
-  announce(`${building.name} — ${meta}`);
+  announce(`${fromBuilding ? `${fromBuilding.name} to ` : ''}${building.name} — ${meta}`);
 }
 
 function setFindMeta(text) {
@@ -397,9 +438,10 @@ function renderMapStatus() {
   }
 
   const isFind = state.mapMode === 'find';
-  $('#map-status-eyebrow').textContent = isFind ? 'Showing' : 'Route';
+  const origin = state.mapContext?.origin ?? null; // a chosen building, or null = current location
+  $('#map-status-eyebrow').textContent = isFind ? (origin ? 'Route' : 'Showing') : 'Route';
   $('#map-status-title').textContent = isFind
-    ? state.mapContext?.building?.name ?? 'Building'
+    ? (origin ? `${origin.name} → ${state.mapContext?.building?.name ?? 'Building'}` : state.mapContext?.building?.name ?? 'Building')
     : state.mapContext?.label ?? "Today's route";
 
   $('#day-legend-showall').hidden = isFind;
@@ -408,8 +450,11 @@ function renderMapStatus() {
   const links = $('#map-status-links');
   const b = state.mapContext?.building;
   if (isFind && b) {
-    $('#find-google').href = EXT.googleMapsUrl(b);
-    $('#find-apple').href = EXT.appleMapsUrl(b);
+    $('#find-google').href = EXT.googleMapsUrl(b, { origin });
+    $('#find-apple').href = EXT.appleMapsUrl(b, { origin });
+    // Waze has no way to represent a fixed start point — hide it rather than
+    // link somewhere that would silently ignore the origin you just chose.
+    $('#find-waze').hidden = Boolean(origin);
     $('#find-waze').href = EXT.wazeUrl(b);
     links.hidden = false;
   } else {
@@ -519,6 +564,43 @@ function applyBoard({ board, digitsEl, unitEl, labelEl, leaveEl, fill, digits, u
   labelEl.textContent = label;
   leaveEl.textContent = leaveLine;
   fill.style.transform = `scaleX(${pct})`;
+}
+
+/**
+ * A quiet strip of what comes after the class the board is already counting
+ * down to — supplements the hero, never repeats it. Kept visually small on
+ * purpose: the countdown numerals are still the one thing meant to dominate.
+ */
+function renderUpNext(now, classes, cfg) {
+  const box = $('#next-upnext');
+  const row = $('#next-upnext-row');
+  if (!box || !row) return;
+
+  const items = S.upcoming(now, classes, 3, cfg);
+  if (!items.length) {
+    box.hidden = true;
+    return;
+  }
+
+  row.innerHTML = items
+    .map(({ cls }) => {
+      const b = cls.buildingId ? B.get(cls.buildingId) : null;
+      return `<button type="button" class="upnext-chip" data-building="${b ? b.id : ''}">
+        <span class="tag-dot" style="--dot: var(--${colorFor(cls)})" aria-hidden="true"></span>
+        <span class="upnext-chip__code">${escapeHtml(cls.code || cls.title || 'Class')}</span>
+        <span class="upnext-chip__time">${S.fmtTime(cls.startMin)}</span>
+      </button>`;
+    })
+    .join('');
+
+  row.onclick = (e) => {
+    const chip = e.target.closest('[data-building]');
+    const id = chip?.dataset.building;
+    const b = id ? B.get(id) : null;
+    if (b) M.panTo(b);
+  };
+
+  box.hidden = false;
 }
 
 /** Keep the handle bar's one-line summary current, whether or not the card is collapsed. */
@@ -644,15 +726,25 @@ function renderToday() {
   const now = new Date();
   const date = viewedDate(now);
   const isToday = startOfDay(date).getTime() === startOfDay(now).getTime();
+  const dateStr = S.localDateStr(date);
+  // Skipping only ever makes sense for today or a day still coming — undoing
+  // one stays available regardless, in case a past view still shows one.
+  const canSkip = S.compareToDateString(date, S.localDateStr(now)) !== -1;
   const list = $('#today-list');
-  const plan = S.dayPlan(date);
   // A class on another day is never "next", so don't highlight it as such.
   const next = isToday ? S.nextClass(now, S.list(), store.settings()) : null;
 
   renderDayPicker(now);
   $('#today-h').textContent = dayHeading(date, now);
 
-  if (!plan.length) {
+  // Everything that meets this weekday, skipped or not — skipped ones still
+  // get a row (muted, with Undo) instead of silently vanishing. Gaps below
+  // are computed from the active ones only, so skipping a middle class
+  // correctly widens the free block around it.
+  const allForDay = S.classesOn(date.getDay(), S.list());
+  const isSkipped = (c) => (c.skipDates ?? []).includes(dateStr);
+
+  if (!allForDay.length) {
     list.innerHTML = `<li class="is-gap">No classes ${isToday ? 'today' : `on ${S.DAY_NAMES[date.getDay()]}`}.</li>`;
     $('#today-summary').innerHTML = `<strong>${S.DAY_NAMES[date.getDay()]}</strong> — nothing scheduled. Enjoy it.`;
     $('#btn-route-day').disabled = true;
@@ -660,31 +752,76 @@ function renderToday() {
     return;
   }
 
-  const classCount = plan.filter((p) => p.type === 'class').length;
-  list.innerHTML = plan
+  const rows = [];
+  let lastActiveEnd = null;
+  for (const cls of allForDay) {
+    const skipped = isSkipped(cls);
+    if (!skipped && lastActiveEnd != null) {
+      const gap = cls.startMin - lastActiveEnd;
+      if (gap > 0) rows.push({ type: 'gap', minutes: gap, from: lastActiveEnd, to: cls.startMin });
+    }
+    rows.push({ type: 'class', cls, skipped });
+    if (!skipped) lastActiveEnd = cls.endMin;
+  }
+
+  list.innerHTML = rows
     .map((item) => {
       if (item.type === 'gap') {
         return `<li class="is-gap">${fmtDuration(item.minutes)} free · ${S.fmtTime(item.from)}–${S.fmtTime(item.to)}</li>`;
       }
       const cls = item.cls;
       const b = cls.buildingId ? B.get(cls.buildingId) : null;
-      const isNext = next && cls.id === next.cls.id && cls.startMin === next.cls.startMin;
-      return `<li class="${isNext ? 'is-next' : ''}">
+      const isNext = !item.skipped && next && cls.id === next.cls.id && cls.startMin === next.cls.startMin;
+      const skipAction = item.skipped
+        ? `<span class="item__badge item__badge--muted">Skipped</span><button class="btn btn--sm" data-unskip="${cls.id}">Undo</button>`
+        : canSkip
+          ? `<button class="btn btn--sm" data-skip="${cls.id}">Skip</button>`
+          : '';
+      return `<li class="${isNext ? 'is-next' : ''} ${item.skipped ? 'is-skipped' : ''}">
         <div class="item__top">
-          <span class="item__code">${escapeHtml(cls.code || cls.title || 'Class')}</span>
+          <span class="item__code"><span class="tag-dot" style="--dot: var(--${colorFor(cls)})" aria-hidden="true"></span>${escapeHtml(cls.code || cls.title || 'Class')}</span>
           <span class="item__time">${S.fmtTime(cls.startMin)}–${S.fmtTime(cls.endMin)}</span>
         </div>
-        <div class="item__meta">${b ? escapeHtml(b.name) : '⚠ no building'}${cls.room ? ` · Room ${escapeHtml(cls.room)}` : ''}</div>
+        <div class="item__meta">${b ? escapeHtml(b.name) : '⚠ no building'}${cls.room ? ` · Room ${escapeHtml(cls.room)}` : ''}${cls.instructor ? ` · ${escapeHtml(cls.instructor)}` : ''}</div>
+        ${skipAction ? `<div class="item__actions">${skipAction}</div>` : ''}
       </li>`;
     })
     .join('');
 
-  $('#today-summary').innerHTML =
-    `<strong>${S.DAY_NAMES[date.getDay()]}</strong> — ${classCount} class${classCount === 1 ? '' : 'es'}, ` +
-    `${S.fmtTime(plan[0].cls.startMin)} to ${S.fmtTime([...plan].reverse().find((p) => p.type === 'class').cls.endMin)}.`;
+  list.onclick = (e) => {
+    const skipBtn = e.target.closest('[data-skip]');
+    if (skipBtn) {
+      const cls = S.list().find((c) => c.id === skipBtn.dataset.skip);
+      if (cls) {
+        S.upsert({ ...cls, skipDates: [...(cls.skipDates ?? []), dateStr] });
+        toast(`Skipped ${cls.code || 'class'} for ${dayHeading(date, now).toLowerCase()}`);
+        refresh();
+      }
+      return;
+    }
+    const unskipBtn = e.target.closest('[data-unskip]');
+    if (unskipBtn) {
+      const cls = S.list().find((c) => c.id === unskipBtn.dataset.unskip);
+      if (cls) {
+        S.upsert({ ...cls, skipDates: (cls.skipDates ?? []).filter((d) => d !== dateStr) });
+        toast('Restored');
+        refresh();
+      }
+    }
+  };
+
+  const activePlan = S.dayPlan(date); // skip-aware, for the summary line only
+  const classCount = activePlan.filter((p) => p.type === 'class').length;
+  if (classCount) {
+    $('#today-summary').innerHTML =
+      `<strong>${S.DAY_NAMES[date.getDay()]}</strong> — ${classCount} class${classCount === 1 ? '' : 'es'}, ` +
+      `${S.fmtTime(activePlan[0].cls.startMin)} to ${S.fmtTime([...activePlan].reverse().find((p) => p.type === 'class').cls.endMin)}.`;
+  } else {
+    $('#today-summary').innerHTML = `<strong>${S.DAY_NAMES[date.getDay()]}</strong> — everything's skipped today.`;
+  }
   $('#btn-route-day').disabled = classCount < 2;
 
-  const stops = S.classesOn(date.getDay(), S.list())
+  const stops = S.classesOnDate(date, S.list())
     .map((c) => (c.buildingId ? B.get(c.buildingId) : null))
     .filter(Boolean);
   const dayGoogleBtn = $('#btn-route-day-google');
@@ -697,11 +834,73 @@ function renderToday() {
   }
 }
 
+// ---------- week-at-a-glance ----------
+
+/** The 7 concrete dates of the current calendar week, Sunday through Saturday. */
+function currentWeekDates(now = new Date()) {
+  const sunday = new Date(now);
+  sunday.setDate(sunday.getDate() - sunday.getDay());
+  sunday.setHours(0, 0, 0, 0);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(sunday);
+    d.setDate(d.getDate() + i);
+    return d;
+  });
+}
+
+/**
+ * All 7 days side by side for the current week — a different read of the
+ * schedule than the single-day Today list, not a replacement for it. Uses
+ * concrete dates (not just weekdays) specifically so a one-off skip shows up
+ * as visibly skipped here too, same as in the day view.
+ */
+function renderWeek() {
+  const now = new Date();
+  const grid = $('#week-grid');
+  const classes = S.list();
+
+  grid.innerHTML = currentWeekDates(now)
+    .map((d, i) => {
+      const isToday = startOfDay(d).getTime() === startOfDay(now).getTime();
+      const dateStr = S.localDateStr(d);
+      const dayClasses = S.classesOn(i, classes); // full weekday list — skipped ones still shown
+      const blocks = dayClasses
+        .map((c) => {
+          const skipped = (c.skipDates ?? []).includes(dateStr);
+          return `<div class="weekgrid__block ${skipped ? 'is-skipped' : ''}">
+            <span class="weekgrid__code">${escapeHtml(c.code || c.title || 'Class')}</span>
+            <span class="weekgrid__time">${S.fmtTime(c.startMin)}</span>
+          </div>`;
+        })
+        .join('');
+      return `<div class="weekgrid__col ${isToday ? 'is-today' : ''}">
+        <div class="weekgrid__head">${S.DAY_NAMES[i].slice(0, 3)} <span class="weekgrid__date">${d.getMonth() + 1}/${d.getDate()}</span></div>
+        ${blocks || '<div class="weekgrid__empty">—</div>'}
+      </div>`;
+    })
+    .join('');
+}
+
+function wireTodayViewTabs() {
+  const tabs = $('#today-viewtabs');
+  if (!tabs) return;
+  tabs.onclick = (e) => {
+    const btn = e.target.closest('[data-view]');
+    if (!btn) return;
+    const view = btn.dataset.view;
+    state.todayView = view;
+    $$('#today-viewtabs [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
+    $('#today-day-view').hidden = view !== 'day';
+    $('#today-week-view').hidden = view !== 'week';
+    if (view === 'week') renderWeek();
+  };
+}
+
 async function showDayRoute() {
   const now = new Date();
   const date = viewedDate(now);
   const isToday = startOfDay(date).getTime() === startOfDay(now).getTime();
-  const namedStops = S.classesOn(date.getDay(), S.list())
+  const namedStops = S.classesOnDate(date, S.list())
     .map((c) => (c.buildingId ? { cls: c, point: B.get(c.buildingId) } : null))
     .filter(Boolean);
 
@@ -826,7 +1025,7 @@ function wireDayLegend() {
 function matchesFilter(cls, needle) {
   if (!needle) return true;
   const b = cls.buildingId ? B.get(cls.buildingId) : null;
-  return [cls.code, cls.title, cls.room, b?.name, cls.buildingRaw]
+  return [cls.code, cls.title, cls.room, b?.name, cls.buildingRaw, cls.instructor]
     .filter(Boolean)
     .some((v) => String(v).toLowerCase().includes(needle));
 }
@@ -856,19 +1055,31 @@ function renderClassList() {
     return;
   }
 
+  // A day-name header appears whenever the sort's primary day (days[0],
+  // already what it's sorted by) changes — a class meeting M/W/F shows up
+  // once, under Monday, not three times. This is a management list, not a
+  // calendar; the calendar-accurate view is Today's Week tab.
   ul.innerHTML = sorted
-    .map((c) => {
+    .map((c, i) => {
+      const primaryDay = c.days[0];
+      const header =
+        i === 0 || sorted[i - 1].days[0] !== primaryDay
+          ? `<li class="classlist__daylabel">${escapeHtml(S.DAY_NAMES[S.DAY_LETTERS.indexOf(primaryDay)] ?? primaryDay)}</li>`
+          : '';
+
       const b = c.buildingId ? B.get(c.buildingId) : null;
-      return `<li class="${b ? '' : 'is-bad'}" data-id="${c.id}">
+      return `${header}<li class="${b ? '' : 'is-bad'}" data-id="${c.id}">
         <div class="item__top">
-          <span class="item__code">${escapeHtml(c.code || 'Class')}</span>
+          <span class="item__code"><span class="tag-dot" style="--dot: var(--${colorFor(c)})" aria-hidden="true"></span>${escapeHtml(c.code || 'Class')}</span>
           <span class="item__time">${S.fmtDays(c.days)} · ${S.fmtTime(c.startMin)}–${S.fmtTime(c.endMin)}</span>
         </div>
         ${c.title ? `<div class="item__meta">${escapeHtml(c.title)}</div>` : ''}
         <div class="item__meta">
           ${b ? escapeHtml(b.name) : `<span class="item__badge">no building</span> ${escapeHtml(c.buildingRaw || '')}`}
           ${c.room ? ` · Room ${escapeHtml(c.room)}` : ''}
+          ${c.instructor ? ` · ${escapeHtml(c.instructor)}` : ''}
         </div>
+        ${c.notes ? `<div class="item__meta item__meta--notes">${escapeHtml(c.notes)}</div>` : ''}
         <div class="item__actions">
           <button class="btn btn--sm" data-edit="${c.id}">Edit</button>
           ${b ? `<button class="btn btn--sm" data-show="${c.id}">Show on map</button>` : ''}
@@ -906,6 +1117,50 @@ function buildDayChips() {
   };
 }
 
+// ---------- class colour tags ----------
+
+const TAG_COLORS = ['tag-1', 'tag-2', 'tag-3', 'tag-4', 'tag-5', 'tag-6', 'tag-7', 'tag-8'];
+
+/**
+ * A stable pick from the palette based on the course code — so the same
+ * code always lands on the same colour across two separate imports, with no
+ * need to persist anything until you actually choose one yourself.
+ */
+function autoColorFor(code) {
+  const s = String(code ?? '');
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) | 0;
+  return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
+}
+
+/** The colour actually shown for a class: its own choice, or the auto pick. */
+function colorFor(cls) {
+  return cls.color || autoColorFor(cls.code || cls.title || cls.id || '');
+}
+
+function buildColorRow() {
+  const row = $('#color-row');
+  if (!row) return;
+  row.innerHTML = TAG_COLORS.map(
+    (t, i) =>
+      `<button type="button" class="swatch" data-color="${t}" style="--swatch-color: var(--${t})"
+        aria-pressed="false" aria-label="Colour ${i + 1}"></button>`,
+  ).join('');
+  row.onclick = (e) => {
+    const btn = e.target.closest('.swatch');
+    if (!btn) return;
+    // Tapping the already-selected swatch clears it back to auto-assigned.
+    const wasSelected = btn.getAttribute('aria-pressed') === 'true';
+    setColorSwatch(wasSelected ? null : btn.dataset.color);
+  };
+}
+
+function setColorSwatch(color) {
+  $$('#color-row .swatch').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.color === color)));
+  const form = $('#form-class');
+  if (form) form.color.value = color ?? '';
+}
+
 function selectedDays() {
   return $$('#days-row .day-chip[aria-pressed="true"]').map((c) => c.dataset.day);
 }
@@ -940,13 +1195,17 @@ function openEditor(id = null) {
     form.start.value = S.fmtTime(c.startMin);
     form.end.value = S.fmtTime(c.endMin);
     form.room.value = c.room ?? '';
+    form.instructor.value = c.instructor ?? '';
+    form.notes.value = c.notes ?? '';
     const b = c.buildingId ? B.get(c.buildingId) : null;
     form.building.value = b ? b.name : c.buildingRaw ?? '';
     setDays(c.days);
+    setColorSwatch(c.color ?? null);
     $('#btn-delete-class').hidden = false;
   } else {
     $('#edit-h').textContent = 'Add class';
     setDays([]);
+    setColorSwatch(null);
     $('#btn-delete-class').hidden = true;
   }
 
@@ -974,7 +1233,7 @@ function wireClassForm() {
     }
   });
 
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const err = $('#form-error');
     const fail = (msg) => {
@@ -998,7 +1257,12 @@ function wireClassForm() {
     const { building } = B.match(raw);
     if (!building) return fail("I don't recognise that building. Pick one from the list.");
 
-    S.upsert({
+    // Start from the existing record (if editing) so fields the form doesn't
+    // expose — skip dates, colour — survive a save instead of getting wiped,
+    // since upsert() replaces the whole record rather than patching it.
+    const existing = form.id.value ? S.list().find((c) => c.id === form.id.value) : null;
+    const candidate = {
+      ...existing,
       id: form.id.value || undefined,
       code,
       title: form.title.value.trim(),
@@ -1008,7 +1272,23 @@ function wireClassForm() {
       buildingId: building.id,
       buildingRaw: raw,
       room: form.room.value.trim(),
-    });
+      instructor: form.instructor.value.trim(),
+      notes: form.notes.value.trim(),
+      color: form.color.value || undefined,
+    };
+
+    const conflicts = S.findConflicts(candidate, S.list());
+    if (conflicts.length) {
+      const desc = conflicts
+        .map((c) => `${c.code || 'a class'} (${S.fmtDays(c.days)} ${S.fmtTime(c.startMin)}–${S.fmtTime(c.endMin)})`)
+        .join(', ');
+      const ok = await confirmDialog('Overlaps with an existing class', `This overlaps with ${desc}.`, {
+        confirmLabel: 'Save anyway',
+      });
+      if (!ok) return;
+    }
+
+    S.upsert(candidate);
 
     // Teach the matcher if you typed something non-obvious.
     if (raw && raw.toLowerCase() !== building.name.toLowerCase()) B.learnAlias(raw, building.id);
@@ -1198,6 +1478,19 @@ async function saveDrafts() {
       (e) => e.code === c.code && e.startMin === c.startMin && S.fmtDays(e.days) === S.fmtDays(c.days),
     );
 
+  // One summary dialog for the whole batch rather than one per row — an
+  // import can be a dozen classes, and a dialog per overlap would be a wall
+  // of clicks.
+  const conflictCount = state.drafts.filter((c) => !isDupe(c) && S.findConflicts(c, existing).length > 0).length;
+  if (conflictCount) {
+    const ok = await confirmDialog(
+      'Some overlap your existing schedule',
+      `${conflictCount} imported class${conflictCount === 1 ? '' : 'es'} overlap${conflictCount === 1 ? 's' : ''} something already on your schedule.`,
+      { confirmLabel: 'Save anyway' },
+    );
+    if (!ok) return;
+  }
+
   let added = 0;
   let skipped = 0;
   for (const draft of state.drafts) {
@@ -1244,6 +1537,25 @@ function applyDisplaySettings() {
   }
 }
 
+/**
+ * Long-press shortcut on the Settings icon (Phase: quick theme toggle) — flips
+ * between light and dark without opening the panel. 'auto' is treated as
+ * whatever it currently resolves to, so the first press always lands on the
+ * opposite of what's on screen right now, matching what the user expects to see.
+ */
+function toggleTheme() {
+  const current = store.settings().theme;
+  const resolvedDark =
+    current === 'dark' || (current !== 'light' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
+  const next = resolvedDark ? 'light' : 'dark';
+  store.saveSettings({ theme: next });
+  applyDisplaySettings();
+  const themeInput = $('#input-theme');
+  if (themeInput) themeInput.value = next;
+  if (navigator.vibrate) navigator.vibrate(15);
+  toast(next === 'dark' ? 'Dark mode' : 'Light mode');
+}
+
 function wireSettings() {
   $('#app-version').textContent = `ClassMapper v${APP_VERSION} · ${BUILD_DATE}`;
 
@@ -1251,6 +1563,7 @@ function wireSettings() {
   $('#input-buffer').value = String(cfg.bufferMin);
   $('#input-speed').value = String(cfg.walkSpeed);
   $('#toggle-notify').checked = N.enabled();
+  $('#toggle-alert-cue').checked = N.alertCueEnabled();
   if (OCR.hasKey()) $('#input-key').placeholder = '•••••••• saved';
 
   $('#btn-save-key').onclick = () => {
@@ -1300,6 +1613,13 @@ function wireSettings() {
       fb.className = 'feedback';
     }
   };
+
+  $('#toggle-alert-cue').onchange = (e) => {
+    store.saveSettings({ alertCue: e.target.checked });
+    if (e.target.checked) N.playAlertCue();
+  };
+
+  $('#btn-test-cue').onclick = () => N.playAlertCue();
 
   // --- display ---
   $('#input-theme').value = cfg.theme ?? 'auto';
@@ -1696,7 +2016,31 @@ function wireTopbar() {
     renderClassList();
     openPanel('#panel-classes');
   };
-  $('#btn-settings').onclick = () => openPanel('#panel-settings');
+  // Tap opens Settings as usual; a ~500ms hold toggles the theme in place
+  // instead, so switching light/dark doesn't require a trip into the panel.
+  {
+    const btnSettings = $('#btn-settings');
+    let longPressTimer = null;
+    let longPressFired = false;
+    btnSettings.addEventListener('pointerdown', () => {
+      longPressFired = false;
+      clearTimeout(longPressTimer);
+      longPressTimer = setTimeout(() => {
+        longPressFired = true;
+        toggleTheme();
+      }, 500);
+    });
+    for (const evt of ['pointerup', 'pointerleave', 'pointercancel']) {
+      btnSettings.addEventListener(evt, () => clearTimeout(longPressTimer));
+    }
+    btnSettings.onclick = () => {
+      if (longPressFired) {
+        longPressFired = false;
+        return;
+      }
+      openPanel('#panel-settings');
+    };
+  }
   $('#btn-find').onclick = findBuilding;
   $('#btn-add').onclick = () => openEditor(null);
   $('#btn-add-empty').onclick = () => openEditor(null);
@@ -1784,6 +2128,7 @@ function openModal({
   message = '',
   mode = 'confirm',        // 'confirm' | 'picker' (must match a building) | 'text' (free text)
   confirmLabel = 'OK',
+  cancelLabel = 'Cancel',
   danger = false,
   initial = '',
   inputLabel = 'Building',
@@ -1798,6 +2143,9 @@ function openModal({
   $('#modal-message').textContent = message;
   confirmBtn.textContent = confirmLabel;
   confirmBtn.className = 'btn ' + (danger ? 'btn--danger' : 'btn--primary');
+  // Always set explicitly — a previous call's custom label must not leak
+  // into this one, since the same dialog element is reused every time.
+  $('#modal-cancel').textContent = cancelLabel;
 
   const isPicker = mode === 'picker';
   const isText = mode === 'text';
@@ -1873,8 +2221,8 @@ function openModal({
 const confirmDialog = (title, message, opts = {}) =>
   openModal({ title, message, mode: 'confirm', confirmLabel: opts.confirmLabel ?? 'Confirm', danger: opts.danger });
 
-const pickBuilding = (title, message = '') =>
-  openModal({ title, message, mode: 'picker', confirmLabel: 'Select' });
+const pickBuilding = (title, message = '', opts = {}) =>
+  openModal({ title, message, mode: 'picker', confirmLabel: 'Select', cancelLabel: opts.cancelLabel ?? 'Cancel' });
 
 function fmtClock(date) {
   const h24 = date.getHours();

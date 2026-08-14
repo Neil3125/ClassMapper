@@ -235,3 +235,107 @@ test('before the semester starts, there is no "next class" at all', () => {
   assert.equal(r.startsAt.getDate(), 17);
   assert.equal(r.startsAt.getDay(), 1);
 });
+
+// --- localDateStr / classesOnDate (skip-a-day groundwork) -----------------
+
+test('localDateStr formats in LOCAL time with zero-padding', () => {
+  assert.equal(S.localDateStr(at(2026, 7, 12, 23, 55)), '2026-08-12');
+  assert.equal(S.localDateStr(at(2026, 0, 5, 0, 1)), '2026-01-05');
+});
+
+test('classesOnDate matches classesOn when nothing is skipped', () => {
+  const wed = S.classesOnDate(at(2026, 7, 12, 8, 0), ALL);
+  assert.deepEqual(wed.map((c) => c.code), ['CS 101', 'Calculus']);
+});
+
+test('classesOnDate drops a class skipped for that exact date only', () => {
+  const skippedOnce = { ...CS101, skipDates: ['2026-08-12'] };
+  const classes = [skippedOnce, CALC, LAB];
+
+  const skippedWed = S.classesOnDate(at(2026, 7, 12, 8, 0), classes);
+  assert.deepEqual(skippedWed.map((c) => c.code), ['Calculus']);
+
+  // The *next* Wednesday isn't skipped — only 8/12 was.
+  const nextWed = S.classesOnDate(at(2026, 7, 19, 8, 0), classes);
+  assert.deepEqual(nextWed.map((c) => c.code), ['CS 101', 'Calculus']);
+
+  // Monday (8/10) is a different date, so 8/12's skip doesn't touch it.
+  const mon = S.classesOnDate(at(2026, 7, 10, 8, 0), classes);
+  assert.deepEqual(mon.map((c) => c.code), ['CS 101', 'Calculus']);
+});
+
+test('a skipped occurrence is excluded from nextClass and dayPlan', () => {
+  const skippedOnce = { ...CS101, skipDates: ['2026-08-12'] };
+  const classes = [skippedOnce, CALC, LAB];
+
+  const next = S.nextClass(at(2026, 7, 12, 8, 0), classes);
+  assert.equal(next.cls.code, 'Calculus');
+
+  const plan = S.dayPlan(at(2026, 7, 12, 8, 0), classes);
+  assert.deepEqual(plan.map((p) => p.type), ['class']); // just Calculus, no gap
+});
+
+// --- upcoming() -------------------------------------------------------------
+
+test('upcoming returns the classes after nextClass, in order', () => {
+  // Monday 8/10, before anything starts: next is CS101 9:00.
+  const next = S.nextClass(at(2026, 7, 10, 8, 0), ALL);
+  assert.equal(next.cls.code, 'CS 101');
+
+  const up = S.upcoming(at(2026, 7, 10, 8, 0), ALL, 3);
+  assert.deepEqual(up.map((r) => `${r.cls.code}@${r.startsAt.getDate()}`), [
+    'Calculus@10', // Monday 10:00
+    'Bio Lab@11',  // Tuesday 13:00 — LAB meets T/R, easy to forget between Mon and Wed
+    'CS 101@12',   // Wednesday 9:00
+  ]);
+});
+
+test('upcoming respects the semester range and skip dates like nextClass does', () => {
+  const skippedOnce = { ...CALC, skipDates: ['2026-08-10'] };
+  const classes = [CS101, skippedOnce, LAB];
+  const up = S.upcoming(at(2026, 7, 10, 8, 0), classes, 2);
+  // Monday's Calculus is skipped, so the next two are Tuesday's lab, then
+  // Wednesday's CS101 — not both of Wednesday's meetings.
+  assert.deepEqual(up.map((r) => r.cls.code), ['Bio Lab', 'CS 101']);
+
+  // Semester ends today: today's own remaining meeting still counts (the
+  // range is inclusive of its last day), but Wednesday's classes don't.
+  const range = { semesterEnd: '2026-08-10' };
+  const upBounded = S.upcoming(at(2026, 7, 10, 8, 0), ALL, 3, range);
+  assert.deepEqual(upBounded.map((r) => r.cls.code), ['Calculus']);
+});
+
+test('upcoming returns fewer than requested once the semester range cuts it off', () => {
+  // A weekly class always recurs on its own — "running out" only really
+  // happens against a semester boundary, so that's what this tests: next
+  // Monday's meeting (8/17) falls after the term ends.
+  const one = [{ id: 'x', code: 'Solo', days: ['M'], startMin: 600, endMin: 650 }];
+  const range = { semesterEnd: '2026-08-10' };
+  const up = S.upcoming(at(2026, 7, 10, 8, 0), one, 3, range);
+  assert.deepEqual(up, []);
+});
+
+// --- findConflicts ----------------------------------------------------------
+
+test('findConflicts flags an overlapping time on a shared day', () => {
+  const candidate = { id: 'new', days: ['M', 'W'], startMin: 570, endMin: 620 }; // 9:30-10:20
+  const conflicts = S.findConflicts(candidate, ALL);
+  assert.deepEqual(conflicts.map((c) => c.code).sort(), ['CS 101', 'Calculus']);
+});
+
+test('findConflicts ignores back-to-back classes that only touch at the boundary', () => {
+  // Fills the 10-minute gap between CS101 ending (9:50) and Calculus starting
+  // (10:00) exactly — touches both boundaries, overlaps neither.
+  const candidate = { id: 'new', days: ['M'], startMin: 590, endMin: 600 };
+  assert.deepEqual(S.findConflicts(candidate, ALL), []);
+});
+
+test('findConflicts ignores classes on different days entirely', () => {
+  const candidate = { id: 'new', days: ['T', 'R'], startMin: 540, endMin: 590 }; // same time as CS101, different days
+  assert.deepEqual(S.findConflicts(candidate, ALL), []);
+});
+
+test('findConflicts excludes the candidate itself when editing', () => {
+  // Editing CS101 in place: same id, same slot — must not conflict with itself.
+  assert.deepEqual(S.findConflicts(CS101, ALL), []);
+});

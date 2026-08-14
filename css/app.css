@@ -70,6 +70,17 @@
   --topbar-line: rgba(0,0,0,0.25);
   --topbar-btn: rgba(255,255,255,0.14);
   --topbar-btn-line: rgba(255,255,255,0.3);
+
+  /* Class colour tags — a personal label, not a status signal. Chosen well
+     clear of crimson/gold so a tag is never mistaken for the urgency ramp. */
+  --tag-1: #2f6fed; /* blue */
+  --tag-2: #0f9d8c; /* teal */
+  --tag-3: #7c3aed; /* purple */
+  --tag-4: #d6409f; /* pink */
+  --tag-5: #1f9d55; /* green */
+  --tag-6: #4f46e5; /* indigo */
+  --tag-7: #0891b2; /* cyan */
+  --tag-8: #52606d; /* slate */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -103,6 +114,14 @@
     --topbar-line: #3a342d;
     --topbar-btn: rgba(255,255,255,0.08);
     --topbar-btn-line: rgba(255,255,255,0.16);
+    --tag-1: #6d9bff;
+    --tag-2: #2dd4c4;
+    --tag-3: #a78bfa;
+    --tag-4: #f472b6;
+    --tag-5: #4ade80;
+    --tag-6: #818cf8;
+    --tag-7: #22d3ee;
+    --tag-8: #94a3b8;
   }
 }
 
@@ -135,6 +154,14 @@ html[data-theme="dark"] {
   --topbar-line: #3a342d;
   --topbar-btn: rgba(255,255,255,0.08);
   --topbar-btn-line: rgba(255,255,255,0.16);
+  --tag-1: #6d9bff;
+  --tag-2: #2dd4c4;
+  --tag-3: #a78bfa;
+  --tag-4: #f472b6;
+  --tag-5: #4ade80;
+  --tag-6: #818cf8;
+  --tag-7: #22d3ee;
+  --tag-8: #94a3b8;
 }
 
 /* High contrast layers on top of whichever theme is active. */
@@ -156,6 +183,14 @@ html[data-contrast="high"] {
   --focus: #0b57d0;
   --on-accent: #ffffff;
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  --tag-1: #1d4ed8;
+  --tag-2: #0a6b5f;
+  --tag-3: #5b21b6;
+  --tag-4: #9d174d;
+  --tag-5: #14532d;
+  --tag-6: #3730a3;
+  --tag-7: #0e7490;
+  --tag-8: #334155;
 }
 
 /* Dark + high contrast. Explicit selector first; the auto case has to sit
@@ -178,6 +213,14 @@ html[data-contrast="high"][data-theme="dark"] {
   --warn: #ffd76a;
   --focus: #8ab4f8;
   --on-accent: #000000;
+  --tag-1: #8ab4ff;
+  --tag-2: #5eead4;
+  --tag-3: #c4b5fd;
+  --tag-4: #f9a8d4;
+  --tag-5: #86efac;
+  --tag-6: #a5b4fc;
+  --tag-7: #67e8f9;
+  --tag-8: #cbd5e1;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -198,6 +241,14 @@ html[data-contrast="high"][data-theme="dark"] {
     --warn: #ffd76a;
     --focus: #8ab4f8;
     --on-accent: #000000;
+    --tag-1: #8ab4ff;
+    --tag-2: #5eead4;
+    --tag-3: #c4b5fd;
+    --tag-4: #f9a8d4;
+    --tag-5: #86efac;
+    --tag-6: #a5b4fc;
+    --tag-7: #67e8f9;
+    --tag-8: #cbd5e1;
   }
 }
 
@@ -580,6 +631,41 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Quiet on purpose — supplements the countdown, never competes with it. */
+.board__upnext { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.board__upnext-label {
+  display: block;
+  font-family: var(--display);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+}
+.board__upnext-row { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.upnext-chip {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font: inherit;
+}
+.upnext-chip:hover { background: var(--surface-2); }
+.upnext-chip__code { font-size: 0.78rem; font-weight: 700; color: var(--ink); }
+.upnext-chip__time {
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* The one flourish: the numerals flip like a split-flap board when the
    minute changes. Killed entirely under prefers-reduced-motion. */
 @keyframes board-flip {
@@ -860,6 +946,21 @@ fieldset.days legend { font-size: 0.78rem; font-weight: 600; color: var(--ink-so
 .day-chip:hover { background: var(--surface-2); color: var(--ink); }
 .day-chip[aria-pressed="true"] { background: var(--crimson); border-color: var(--crimson); color: var(--on-accent); }
 
+.swatch-row { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 2px; }
+.swatch {
+  appearance: none;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  background: var(--swatch-color);
+  cursor: pointer;
+  padding: 0;
+}
+.swatch[aria-pressed="true"] {
+  border-color: var(--surface);
+  box-shadow: 0 0 0 2px var(--ink);
+}
+
 .feedback { font-size: 0.82rem; margin: -4px 0 12px; min-height: 1em; }
 .feedback--good { color: var(--good); }
 .feedback--bad { color: var(--bad); }
@@ -888,6 +989,20 @@ fieldset.days legend { font-size: 0.78rem; font-weight: 600; color: var(--ink-so
   border-color: var(--bad);
   background: color-mix(in srgb, var(--bad) 8%, var(--surface));
 }
+/* Day-group headers reuse the Settings-section eyebrow treatment. */
+.classlist li.classlist__daylabel {
+  border: none;
+  background: transparent;
+  padding: 10px 2px 4px;
+  margin-bottom: 2px;
+  font-family: var(--display);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--crimson);
+}
+.classlist li.classlist__daylabel:first-child { padding-top: 2px; }
 .daylist li.is-gap {
   background: transparent;
   border-style: dashed;
@@ -902,6 +1017,12 @@ fieldset.days legend { font-size: 0.78rem; font-weight: 600; color: var(--ink-so
   border-left: 3px solid var(--crimson);
   background: color-mix(in srgb, var(--crimson) 5%, var(--surface));
 }
+/* A skipped occurrence stays in the list — struck through and muted — rather
+   than vanishing, so it reads as "won't happen" instead of "gone." */
+.daylist li.is-skipped { opacity: 0.6; }
+.is-skipped .item__code,
+.is-skipped .item__time { text-decoration: line-through; }
+.item__badge--muted { background: var(--surface-2); color: var(--ink-soft); }
 
 .item__top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
 .item__code {
@@ -909,6 +1030,16 @@ fieldset.days legend { font-size: 0.78rem; font-weight: 600; color: var(--ink-so
   font-weight: 700;
   font-size: 1.15rem;
   letter-spacing: 0.01em;
+}
+/* A personal label, not a status signal — deliberately kept out of the map
+   pins, which reserve colour for the leave-by urgency ramp. */
+.tag-dot {
+  display: inline-block;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--dot);
+  margin-right: 6px;
+  vertical-align: middle;
 }
 .item__time {
   font-family: var(--display);
@@ -919,6 +1050,7 @@ fieldset.days legend { font-size: 0.78rem; font-weight: 600; color: var(--ink-so
   font-variant-numeric: tabular-nums;
 }
 .item__meta { font-size: 0.82rem; color: var(--ink-soft); margin-top: 2px; }
+.item__meta--notes { font-style: italic; }
 .item__actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .item__badge {
   display: inline-block; font-size: 0.68rem; font-weight: 700;
@@ -932,6 +1064,78 @@ fieldset.days legend { font-size: 0.78rem; font-weight: 600; color: var(--ink-so
   padding: 10px 12px; font-size: 0.88rem;
 }
 .summary strong { color: var(--crimson); }
+
+/* ---------- day/week view tabs + week grid ---------- */
+
+.viewtabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  margin-bottom: 12px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+.viewtabs__btn {
+  flex: 1;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 8px;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.viewtabs__btn[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--crimson);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.weekgrid {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.weekgrid__col {
+  flex: 0 0 108px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  background: var(--surface);
+}
+.weekgrid__col.is-today { border-color: var(--crimson); border-width: 2px; }
+.weekgrid__head {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+  margin-bottom: 6px;
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+}
+.weekgrid__date { color: var(--ink-soft); font-weight: 600; }
+.weekgrid__block {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 6px;
+  margin-bottom: 4px;
+  border-radius: 7px;
+  background: var(--surface-2);
+  font-size: 0.72rem;
+}
+.weekgrid__block.is-skipped { opacity: 0.55; }
+.weekgrid__block.is-skipped .weekgrid__code { text-decoration: line-through; }
+.weekgrid__code { font-weight: 700; color: var(--ink); }
+.weekgrid__time { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.weekgrid__empty { color: var(--ink-soft); font-size: 0.78rem; text-align: center; padding: 8px 0; }
 
 .overrides { font-size: 0.8rem; }
 .overrides div {

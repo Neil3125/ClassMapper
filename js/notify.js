@@ -33,6 +33,49 @@ export function enabled() {
   return settings().notifications && permission() === 'granted';
 }
 
+export function alertCueEnabled() {
+  return Boolean(settings().alertCue);
+}
+
+/**
+ * A short vibration pattern plus a two-tone beep, synthesised with Web Audio
+ * so there's no audio file to fetch — offline mode stays unaffected. Silent
+ * notifications are easy to miss with a phone in a pocket or on silent-but-
+ * vibrate; this gives leave-by alerts a second, harder-to-miss channel.
+ */
+export function playAlertCue() {
+  try {
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+  } catch {
+    // Vibration API is a nice-to-have; never let it break the alert itself.
+  }
+
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const now = ctx.currentTime;
+
+    [[880, now], [1175, now + 0.16]].forEach(([freq, start]) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.001, start);
+      gain.gain.exponentialRampToValueAtTime(0.2, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.14);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.15);
+    });
+
+    // Let the tail finish, then release the audio context.
+    setTimeout(() => ctx.close().catch(() => {}), 500);
+  } catch (err) {
+    console.warn('Alert tone failed', err);
+  }
+}
+
 function todayKey(d = new Date()) {
   // Local-date key, built from parts so there's no UTC shift.
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
@@ -82,6 +125,7 @@ export function maybeAlert({ cls, leaveAt, walkMin, buildingName }, now = new Da
       window.focus();
       n.close();
     };
+    if (alertCueEnabled()) playAlertCue();
     markFired(id);
     return true;
   } catch (err) {

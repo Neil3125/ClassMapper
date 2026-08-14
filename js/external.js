@@ -6,10 +6,12 @@
 // (geo:, comgooglemaps://) needed, and no API key. Tapping one just hands
 // off to that app; ClassMapper doesn't see anything past that point.
 //
-// Origin is deliberately omitted everywhere: all three providers default to
-// the device's own live GPS when no starting point is given, which is more
-// accurate than anything ClassMapper could supply and works even if you
-// never granted this page location access.
+// Origin is omitted by default: all three providers fall back to the
+// device's own live GPS when no starting point is given, which is more
+// accurate than anything ClassMapper could supply for "route from here."
+// An explicit `origin` is different — that's a start point someone
+// deliberately chose (planning a route between two buildings, not
+// necessarily standing at either), so it's passed straight through instead.
 
 function coord(p) {
   return `${p.lat},${p.lon}`;
@@ -20,18 +22,25 @@ function dedupeAdjacent(stops) {
   return stops.filter((s, i) => i === 0 || !same(s, stops[i - 1]));
 }
 
-export function googleMapsUrl(dest, { mode = 'walking' } = {}) {
+export function googleMapsUrl(dest, { mode = 'walking', origin = null } = {}) {
   const params = new URLSearchParams({ api: '1', destination: coord(dest), travelmode: mode });
+  if (origin) params.set('origin', coord(origin));
   return `https://www.google.com/maps/dir/?${params}`;
 }
 
-export function appleMapsUrl(dest, { mode = 'walking' } = {}) {
+export function appleMapsUrl(dest, { mode = 'walking', origin = null } = {}) {
   const flag = mode === 'walking' ? 'w' : mode === 'transit' ? 'r' : 'd';
   const params = new URLSearchParams({ daddr: coord(dest), dirflg: flag });
+  if (origin) params.set('saddr', coord(origin));
   return `https://maps.apple.com/?${params}`;
 }
 
-/** Waze has no origin parameter at all — it always starts from wherever you are. */
+/**
+ * Waze has no origin parameter at all — it always starts from wherever you
+ * are, full stop. There's no honest way to represent a planned route from a
+ * fixed building here, so callers planning between two buildings should hide
+ * this link entirely rather than offer one that silently ignores the origin.
+ */
 export function wazeUrl(dest) {
   const params = new URLSearchParams({ ll: coord(dest), navigate: 'yes' });
   return `https://waze.com/ul?${params}`;

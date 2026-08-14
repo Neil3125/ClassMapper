@@ -38,6 +38,19 @@ export function fmtDays(days) {
   return (days ?? []).join('');
 }
 
+/**
+ * 'YYYY-MM-DD' from a LOCAL date — never `toISOString()`, which is UTC and
+ * would shift the date near midnight, the exact trap this file avoids
+ * everywhere else (see `compareToDateString` below). Used to key one-off
+ * skipped occurrences (`skipDates`) against a specific calendar date.
+ */
+export function localDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 // --- CRUD -----------------------------------------------------------------
 
 export function list() {
@@ -79,27 +92,39 @@ export function classesOn(dayIndex, classes = list()) {
     .sort((a, b) => a.startMin - b.startMin);
 }
 
+/**
+ * classesOn(), narrowed to one specific calendar date rather than just a
+ * weekday. classesOn() has no way to know about a one-off cancellation — it
+ * only ever sees "meets on Wednesdays" — so this is the version everything
+ * that has a concrete date should call instead.
+ */
+export function classesOnDate(date, classes = list()) {
+  const dateStr = localDateStr(date);
+  return classesOn(date.getDay(), classes).filter((c) => !(c.skipDates ?? []).includes(dateStr));
+}
+
 export function classesToday(now = new Date(), classes = list()) {
-  return classesOn(now.getDay(), classes);
+  return classesOnDate(now, classes);
 }
 
 /**
- * The next class meeting at or after `now`, scanning up to 7 days ahead so a
- * Friday afternoon correctly rolls forward to Monday morning.
- *
- * `range` is an optional {semesterStart, semesterEnd} pair; passing nothing
- * means no restriction, which keeps this function pure and easy to test.
- *
- * Returns { cls, startsAt: Date, endsAt: Date, minutesAway, isNow } or null.
+ * Shared scan behind both `nextClass` and `upcoming`: walks up to 8 days
+ * forward from `now` (so a Friday afternoon rolls to Monday morning),
+ * collecting meetings in chronological order and stopping once `limit` are
+ * found. One implementation means the two can't quietly drift apart on the
+ * semester-range or skip-date edge cases.
  */
-export function nextClass(now = new Date(), classes = list(), range = {}) {
-  if (!classes.length) return null;
-  if (semesterPhase(now, range) !== 'in') return null;
+function scanMeetings(now, classes, range, limit) {
+  if (!classes.length) return [];
+  if (semesterPhase(now, range) !== 'in') return [];
   const nowMin = minutesNow(now);
+  const out = [];
 
-  for (let offset = 0; offset < 8; offset++) {
-    const day = (now.getDay() + offset) % 7;
-    for (const cls of classesOn(day, classes)) {
+  for (let offset = 0; offset < 8 && out.length < limit; offset++) {
+    const dateForOffset = new Date(now);
+    dateForOffset.setDate(dateForOffset.getDate() + offset);
+
+    for (const cls of classesOnDate(dateForOffset, classes)) {
       // Today: skip meetings that have already finished.
       if (offset === 0 && cls.endMin <= nowMin) continue;
 
@@ -114,16 +139,53 @@ export function nextClass(now = new Date(), classes = list(), range = {}) {
       const endsAt = new Date(startsAt);
       endsAt.setHours(Math.floor(cls.endMin / 60), cls.endMin % 60, 0, 0);
 
-      return {
+      out.push({
         cls,
         startsAt,
         endsAt,
         minutesAway: Math.round((startsAt - now) / 60000),
         isNow: offset === 0 && cls.startMin <= nowMin && nowMin < cls.endMin,
-      };
+      });
+
+      if (out.length >= limit) break;
     }
   }
-  return null;
+  return out;
+}
+
+/**
+ * The next class meeting at or after `now`.
+ *
+ * `range` is an optional {semesterStart, semesterEnd} pair; passing nothing
+ * means no restriction, which keeps this function pure and easy to test.
+ *
+ * Returns { cls, startsAt: Date, endsAt: Date, minutesAway, isNow } or null.
+ */
+export function nextClass(now = new Date(), classes = list(), range = {}) {
+  return scanMeetings(now, classes, range, 1)[0] ?? null;
+}
+
+/**
+ * The classes chronologically *after* the one `nextClass` returns — for a
+ * short "up next" preview, not a second copy of the hero countdown. Shares
+ * `nextClass`'s exact scan so the two can never disagree about what's next.
+ */
+export function upcoming(now = new Date(), classes = list(), count = 3, range = {}) {
+  return scanMeetings(now, classes, range, count + 1).slice(1);
+}
+
+/**
+ * Existing classes that share a day with `candidate` and overlap in time.
+ * A warning, not a rule — some students genuinely do have overlapping
+ * optional sections — so this only ever informs, never blocks on its own.
+ */
+export function findConflicts(candidate, classes = list()) {
+  const days = new Set(candidate.days ?? []);
+  return classes.filter((c) => {
+    if (c.id && c.id === candidate.id) return false;
+    if (!(c.days ?? []).some((d) => days.has(d))) return false;
+    return candidate.startMin < c.endMin && candidate.endMin > c.startMin;
+  });
 }
 
 // --- semester range ---------------------------------------------------------

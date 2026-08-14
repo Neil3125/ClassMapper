@@ -42,6 +42,7 @@ export const DEFAULT_SETTINGS = {
   bufferMin: 5,          // extra minutes of slack before "leave by"
   walkSpeed: 1.35,       // m/s, used by the offline fallback estimate
   notifications: false,
+  alertCue: false,       // vibration + tone alongside the leave-by notification
   satellite: false,
   offline: false,        // opt-in service worker; see registerServiceWorker()
   cardCollapsed: false,  // next-class card hidden down to its handle bar
