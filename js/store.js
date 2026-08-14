@@ -50,7 +50,6 @@ export const DEFAULT_SETTINGS = {
   highContrast: false,
   semesterStart: '',     // 'YYYY-MM-DD' — see schedule.js on why these stay strings
   semesterEnd: '',
-  onboarded: false,      // seen the first-run welcome tour
 };
 
 export function settings() {

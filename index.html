@@ -405,11 +405,6 @@
     <div id="cache-feedback" class="feedback"></div>
 
     <hr>
-
-    <h3>Help</h3>
-    <button id="btn-show-onboarding" class="btn btn--sm">Show welcome guide</button>
-
-    <hr>
     <p class="hint">
       Map data © OpenStreetMap contributors (ODbL). Routing by FOSSGIS Valhalla.
       Satellite imagery © Esri.
@@ -417,81 +412,6 @@
     <p class="version" id="app-version"></p>
   </div>
 </aside>
-
-<!-- First-run welcome tour. Shown automatically once, and again any time from
-     Settings → "Show welcome guide". Native <dialog> gives focus trapping and
-     Escape handling for free, same as the modal below. -->
-<dialog id="onboarding" class="onboarding">
-  <div class="onboarding__steps">
-
-    <section class="onboarding__step" data-step="1">
-      <div class="onboarding__hero" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>
-      </div>
-      <h2>Welcome to ClassMapper</h2>
-      <p>
-        A campus map for Tuskegee that knows your class schedule — your next class,
-        how to walk there, and when to leave.
-      </p>
-    </section>
-
-    <section class="onboarding__step" data-step="2" hidden>
-      <h2>What the buttons do</h2>
-      <p class="onboarding__lede">These live at the top of the screen.</p>
-      <ul class="onboarding__glossary">
-        <li>
-          <span class="onboarding__icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span>
-          <span><strong>Center on you</strong><br>Find your position on the map</span>
-        </li>
-        <li>
-          <span class="onboarding__icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></span>
-          <span><strong>Satellite view</strong><br>Switch between map and satellite photos</span>
-        </li>
-        <li>
-          <span class="onboarding__icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
-          <span><strong>Find a building</strong><br>Search any of the 53 campus buildings, not just your classes</span>
-        </li>
-        <li>
-          <span class="onboarding__icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
-          <span><strong>Today</strong><br>See your whole day, or switch to another day</span>
-        </li>
-        <li>
-          <span class="onboarding__icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span>
-          <span><strong>My classes</strong><br>Add, edit, search, or import your schedule</span>
-        </li>
-        <li>
-          <span class="onboarding__icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
-          <span><strong>Settings</strong><br>Your API key, display options, and backups</span>
-        </li>
-      </ul>
-    </section>
-
-    <section class="onboarding__step" data-step="3" hidden>
-      <h2>Add your schedule</h2>
-      <p>Two ways to get your classes in. You can always add more later.</p>
-      <div class="onboarding__actions">
-        <button type="button" id="onboard-import" class="btn btn--primary btn--block">
-          Import a screenshot
-          <span>Reads a photo of your schedule with AI</span>
-        </button>
-        <button type="button" id="onboard-manual" class="btn btn--block">
-          Add a class by hand
-          <span>Type in one class to start</span>
-        </button>
-      </div>
-    </section>
-
-  </div>
-
-  <div class="onboarding__footer">
-    <div class="onboarding__dots" id="onboarding-dots" aria-hidden="true"></div>
-    <div class="onboarding__nav">
-      <button type="button" id="onboard-skip" class="btn btn--ghost btn--sm">Skip</button>
-      <button type="button" id="onboard-back" class="btn btn--sm" hidden>Back</button>
-      <button type="button" id="onboard-next" class="btn btn--primary btn--sm">Next</button>
-    </div>
-  </div>
-</dialog>
 
 <!-- One reusable modal, two modes. Native <dialog> gives focus trapping,
      Escape handling and inert background for free — unlike prompt()/confirm(),

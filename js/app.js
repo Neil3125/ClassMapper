@@ -59,7 +59,6 @@ async function boot() {
     ['settings', wireSettings],
     ['day route legend', wireDayLegend],
     ['next card toggle', wireNextCardToggle],
-    ['onboarding', wireOnboarding],
   ]) {
     try {
       fn();
@@ -75,8 +74,6 @@ async function boot() {
   setInterval(tick, 30_000);
 
   registerServiceWorker();
-
-  if (!store.settings().onboarded) openOnboarding();
 }
 
 /**
@@ -1649,7 +1646,7 @@ function wirePanels() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       // <dialog> handles its own Escape; don't close the panel underneath it too.
-      if ($('#modal').open || $('#onboarding').open) return;
+      if ($('#modal').open) return;
       closePanels();
       M.cancelPick();
       $('#pick-banner').hidden = true;
@@ -1878,88 +1875,6 @@ const confirmDialog = (title, message, opts = {}) =>
 
 const pickBuilding = (title, message = '') =>
   openModal({ title, message, mode: 'picker', confirmLabel: 'Select' });
-
-// ---------- onboarding (first-run welcome tour) ----------
-
-const ONBOARD_STEP_COUNT = 3;
-let onboardStep = 1;
-
-function renderOnboardStep() {
-  $$('.onboarding__step').forEach((el) => {
-    el.hidden = Number(el.dataset.step) !== onboardStep;
-  });
-  $('#onboard-back').hidden = onboardStep === 1;
-  $('#onboard-next').hidden = onboardStep === ONBOARD_STEP_COUNT;
-  $('#onboard-skip').textContent = onboardStep === ONBOARD_STEP_COUNT ? 'Close' : 'Skip';
-
-  const dots = $('#onboarding-dots');
-  dots.innerHTML = Array.from(
-    { length: ONBOARD_STEP_COUNT },
-    (_, i) => `<span class="${i + 1 === onboardStep ? 'is-active' : ''}"></span>`,
-  ).join('');
-
-  // Land focus on the step heading so screen readers announce the new
-  // content, same pattern used when a panel opens.
-  $(`.onboarding__step[data-step="${onboardStep}"] h2`)?.focus?.();
-}
-
-/**
- * Marks the tour seen and closes it. Persists the setting itself rather than
- * waiting on the dialog's 'close' event — that event turned out not to fire
- * reliably on every close() path when tested, and this flag matters too much
- * (getting stuck showing the tour forever) to leave to an unreliable event.
- */
-function finishOnboarding() {
-  store.saveSettings({ onboarded: true });
-  $('#onboarding').close();
-}
-
-function openOnboarding() {
-  onboardStep = 1;
-  const h2s = $$('.onboarding__step h2');
-  h2s.forEach((h) => h.setAttribute('tabindex', '-1'));
-  renderOnboardStep();
-  $('#onboarding').showModal();
-}
-
-function wireOnboarding() {
-  $('#onboard-next').onclick = () => {
-    onboardStep = Math.min(ONBOARD_STEP_COUNT, onboardStep + 1);
-    renderOnboardStep();
-  };
-  $('#onboard-back').onclick = () => {
-    onboardStep = Math.max(1, onboardStep - 1);
-    renderOnboardStep();
-  };
-  $('#onboard-skip').onclick = finishOnboarding;
-  // Escape is the one dismissal path with no button behind it. Handle it
-  // ourselves rather than trusting the dialog's native close behaviour to
-  // both fire and to have run finishOnboarding's persistence in time.
-  $('#onboarding').addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      finishOnboarding();
-    }
-  });
-  // Belt-and-suspenders: if the native close/cancel path *does* fire (it may
-  // on some engines) and somehow reached here without going through one of
-  // our handlers, still make sure the flag is set. Cheap and idempotent.
-  $('#onboarding').addEventListener('close', () => store.saveSettings({ onboarded: true }));
-
-  $('#onboard-import').onclick = () => {
-    finishOnboarding();
-    openPanel('#panel-import');
-  };
-  $('#onboard-manual').onclick = () => {
-    finishOnboarding();
-    openEditor(null);
-  };
-
-  $('#btn-show-onboarding').onclick = () => {
-    closePanels();
-    openOnboarding();
-  };
-}
 
 function fmtClock(date) {
   const h24 = date.getHours();
