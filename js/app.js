@@ -33,6 +33,8 @@ const state = {
   panelOpener: null,   // element to hand focus back to when a panel closes
   viewDay: null,       // day index being viewed in the Today panel; null = today
   classFilter: '',     // class-list search text
+  selectMode: false,   // bulk-select mode in My Classes
+  selectedIds: new Set(), // class ids checked while selectMode is on
   todayView: 'day',    // 'day' | 'week' — which view the Today panel shows
   lastRouteOrigin: null, // {lat, lon} the walk time was last computed from
   lastRouteRefreshAt: 0, // Date.now() of that computation
@@ -70,6 +72,7 @@ async function boot() {
     ['top bar', wireTopbar],
     ['panels', wirePanels],
     ['class form', wireClassForm],
+    ['class select', wireClassSelect],
     ['import', wireImport],
     ['settings', wireSettings],
     ['day route legend', wireDayLegend],
@@ -1243,7 +1246,9 @@ function renderClassList() {
           : '';
 
       const b = c.buildingId ? B.get(c.buildingId) : null;
-      return `${header}<li class="${b ? '' : 'is-bad'}" data-id="${c.id}">
+      const selected = state.selectedIds.has(c.id);
+      return `${header}<li class="${b ? '' : 'is-bad'}${selected ? ' is-selected' : ''}" data-id="${c.id}">
+        ${state.selectMode ? `<input type="checkbox" class="classlist__check" data-check="${c.id}" aria-label="Select ${escapeHtml(c.code || 'class')}" ${selected ? 'checked' : ''}>` : ''}
         <div class="item__top">
           <span class="item__code"><span class="tag-dot" style="--dot: var(--${colorFor(c)})" aria-hidden="true"></span>${escapeHtml(c.code || 'Class')}</span>
           <span class="item__time">${S.fmtDays(c.days)} · ${S.fmtTime(c.startMin)}–${S.fmtTime(c.endMin)}</span>
@@ -1264,7 +1269,23 @@ function renderClassList() {
     })
     .join('');
 
+  ul.classList.toggle('is-selecting', state.selectMode);
+
   ul.onclick = (e) => {
+    // In select mode, tapping anywhere on a row toggles it — the checkbox is
+    // still there for precision, but the whole row is the easier target.
+    if (state.selectMode) {
+      const li = e.target.closest('li[data-id]');
+      if (li && !e.target.closest('[data-check]')) {
+        const check = li.querySelector('[data-check]');
+        if (check) {
+          check.checked = !check.checked;
+          check.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }
+      return;
+    }
+
     const edit = e.target.closest('[data-edit]');
     if (edit) return openEditor(edit.dataset.edit);
     const show = e.target.closest('[data-show]');
@@ -1276,6 +1297,82 @@ function renderClassList() {
         M.panTo(b);
       }
     }
+  };
+
+  ul.onchange = (e) => {
+    const check = e.target.closest('[data-check]');
+    if (!check) return;
+    if (check.checked) state.selectedIds.add(check.dataset.check);
+    else state.selectedIds.delete(check.dataset.check);
+    check.closest('li')?.classList.toggle('is-selected', check.checked);
+    updateSelectBar();
+  };
+}
+
+// ---------- bulk select & delete ----------
+
+function enterSelectMode() {
+  state.selectMode = true;
+  state.selectedIds = new Set();
+  $('#btn-select-mode').setAttribute('aria-pressed', 'true');
+  $('#select-bar').hidden = false;
+  renderClassList();
+  updateSelectBar();
+}
+
+function exitSelectMode() {
+  state.selectMode = false;
+  state.selectedIds = new Set();
+  $('#btn-select-mode').setAttribute('aria-pressed', 'false');
+  $('#select-bar').hidden = true;
+  renderClassList();
+}
+
+function updateSelectBar() {
+  const count = state.selectedIds.size;
+  $('#select-count').textContent = count ? `${count} selected` : 'Tap classes to select';
+  $('#btn-select-delete').disabled = count === 0;
+
+  const ids = $$('#class-list li[data-id]').map((li) => li.dataset.id);
+  const allSelected = ids.length > 0 && ids.every((id) => state.selectedIds.has(id));
+  $('#btn-select-all').textContent = allSelected ? 'Clear all' : 'Select all';
+}
+
+function wireClassSelect() {
+  $('#btn-select-mode').onclick = () => (state.selectMode ? exitSelectMode() : enterSelectMode());
+  $('#btn-select-cancel').onclick = exitSelectMode;
+
+  $('#btn-select-all').onclick = () => {
+    const ids = $$('#class-list li[data-id]').map((li) => li.dataset.id);
+    const allSelected = ids.length > 0 && ids.every((id) => state.selectedIds.has(id));
+    if (allSelected) state.selectedIds.clear();
+    else ids.forEach((id) => state.selectedIds.add(id));
+    renderClassList();
+    updateSelectBar();
+  };
+
+  $('#btn-select-delete').onclick = async () => {
+    const ids = [...state.selectedIds];
+    if (!ids.length) return;
+    const removed = S.list().filter((c) => ids.includes(c.id));
+    if (!removed.length) return;
+
+    const label = removed.length === 1 ? removed[0].code || 'this class' : `${removed.length} classes`;
+    const detail = removed.map((c) => c.code || 'Class').join(', ');
+    if (!(await confirmDialog(`Delete ${label}?`, detail, { confirmLabel: 'Delete', danger: true }))) return;
+
+    removed.forEach((c) => S.remove(c.id));
+    exitSelectMode();
+    refresh();
+    toast(`Deleted ${label}`, false, {
+      label: 'Undo',
+      onClick: () => {
+        removed.forEach((c) => S.upsert(c));
+        toast('Restored');
+        refresh();
+        renderClassList();
+      },
+    });
   };
 }
 
@@ -2152,6 +2249,7 @@ function openPanel(sel) {
 
   if (sel === '#panel-import') showImportStage(state.drafts ? 'review' : 'start');
   if (sel === '#panel-settings') renderOverrides();
+  if (sel === '#panel-classes' && state.selectMode) exitSelectMode();
 
   // Land on the heading rather than the first control, so the panel's purpose
   // is announced before its options.
@@ -2304,7 +2402,7 @@ function toast(msg, bad = false, action = null) {
 
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (el.hidden = true), action ? 8000 : bad ? 5200 : 3200);
+  toastTimer = setTimeout(() => (el.hidden = true), action ? 4500 : bad ? 5200 : 3200);
 }
 
 /**

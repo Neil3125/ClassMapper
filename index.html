@@ -175,6 +175,13 @@
     <div class="row">
       <button id="btn-add" class="btn btn--primary">Add class</button>
       <button id="btn-import" class="btn">Import screenshot</button>
+      <button id="btn-select-mode" class="btn btn--sm" aria-pressed="false">Select</button>
+    </div>
+    <div id="select-bar" class="row" hidden>
+      <span id="select-count" class="hint select-bar__count">Tap classes to select</span>
+      <button id="btn-select-all" class="btn btn--sm btn--ghost">Select all</button>
+      <button id="btn-select-cancel" class="btn btn--sm">Cancel</button>
+      <button id="btn-select-delete" class="btn btn--sm btn--danger" disabled>Delete</button>
     </div>
     <label id="class-search-wrap" hidden>Search
       <input type="search" id="class-search" placeholder="Course, building, or room" autocomplete="off">

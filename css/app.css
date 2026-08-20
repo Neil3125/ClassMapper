@@ -1020,6 +1020,32 @@ fieldset.days legend { font-size: 0.78rem; font-weight: 600; color: var(--ink-so
   border-color: var(--bad);
   background: color-mix(in srgb, var(--bad) 8%, var(--surface));
 }
+
+/* Bulk-select mode: a checkbox appears at the left edge of each row, and the
+   row itself becomes tappable (not just its Edit/Show buttons, which are
+   hidden here since selecting is the point, not editing). */
+.classlist.is-selecting li[data-id] {
+  padding-left: 40px;
+  position: relative;
+  cursor: pointer;
+}
+.classlist.is-selecting li[data-id] .item__actions { display: none; }
+.classlist.is-selecting li[data-id].is-selected {
+  border-color: var(--crimson);
+  background: color-mix(in srgb, var(--crimson) 6%, var(--surface));
+}
+.classlist__check {
+  position: absolute;
+  left: 12px;
+  top: 13px;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--crimson);
+  cursor: pointer;
+}
+
+.select-bar__count { flex: 1; align-self: center; }
 /* Day-group headers reuse the Settings-section eyebrow treatment. */
 .classlist li.classlist__daylabel {
   border: none;
