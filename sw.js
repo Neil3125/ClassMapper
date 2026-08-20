@@ -8,7 +8,7 @@
 // Map tiles are cache-first — they never change and re-downloading them on
 // campus wifi is a waste.
 
-const VERSION = 'v6';
+const VERSION = 'v7';
 const SHELL = `classmapper-shell-${VERSION}`;
 const TILES = `classmapper-tiles-${VERSION}`;
 const TILE_LIMIT = 600;
@@ -24,6 +24,7 @@ const SHELL_FILES = [
   'js/schedule.js',
   'js/route.js',
   'js/map.js',
+  'js/geo.js',
   'js/ocr.js',
   'js/notify.js',
   'js/external.js',
@@ -72,6 +73,30 @@ self.addEventListener('message', (event) => {
   if (event.data === 'version' && event.ports[0]) {
     event.ports[0].postMessage({ version: VERSION, shell: SHELL });
   }
+});
+
+// Snooze/Got it on a notification shown via showNotification(). A service
+// worker can't touch localStorage (window-only API), so it hands the action
+// off to a page instead of mutating anything itself — an open tab gets a
+// postMessage, or a closed one gets opened with the action in the URL for
+// boot() to pick up.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const { action } = event;
+  const tag = event.notification.tag;
+
+  event.waitUntil(
+    (async () => {
+      const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      const target = clientsList[0];
+      if (target) {
+        target.postMessage({ type: 'cm-notification-action', action, tag });
+        await target.focus();
+      } else {
+        await self.clients.openWindow(`./?notif-action=${encodeURIComponent(action)}&tag=${encodeURIComponent(tag)}`);
+      }
+    })(),
+  );
 });
 
 function isTile(url) {

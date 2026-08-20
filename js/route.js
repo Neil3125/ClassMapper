@@ -9,6 +9,7 @@ import { read, write, KEYS, settings } from './store.js';
 
 const ENDPOINT = 'https://valhalla1.openstreetmap.de/route';
 const CACHE_LIMIT = 300;
+const TIMEOUT_MS = 8000;
 
 export function haversine(a, b) {
   const R = 6371000;
@@ -93,8 +94,14 @@ function writeCache(key, value) {
 /**
  * Walking route from a to b, each {lat, lon}.
  * Always resolves — falls back to an estimate rather than throwing.
+ *
+ * `cache` defaults to true (building-to-building routes never change, so the
+ * free endpoint gets hit once per pair, ever). Pass `cache: false` for a live
+ * GPS origin — it's almost never within cacheKey's ~1m precision of a prior
+ * fix, so every call would write a fresh, never-reused entry and evict real
+ * building-pair routes out of the capped cache.
  */
-export async function walk(a, b, { signal } = {}) {
+export async function walk(a, b, { signal, cache = true } = {}) {
   if (!a || !b) return null;
 
   // Same building (back-to-back classes in one place): no walk, no API call.
@@ -103,14 +110,26 @@ export async function walk(a, b, { signal } = {}) {
   }
 
   const key = cacheKey(a, b);
-  const cached = readCache(key);
-  if (cached) return { ...cached, cached: true };
+  if (cache) {
+    const cached = readCache(key);
+    if (cached) return { ...cached, cached: true };
+  }
+
+  // Combine the caller's signal (if any) with an internal timeout, so a
+  // live-tracking call that skips the cache can't stack up hung requests.
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', onAbort);
+  }
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
     const res = await fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      signal,
+      signal: controller.signal,
       body: JSON.stringify({
         locations: [
           { lat: a.lat, lon: a.lon, type: 'break' },
@@ -139,12 +158,15 @@ export async function walk(a, b, { signal } = {}) {
       approximate: false,
     };
 
-    writeCache(key, result);
+    if (cache) writeCache(key, result);
     return result;
   } catch (err) {
     if (err.name === 'AbortError') throw err;
     console.warn('Routing failed, using straight-line estimate:', err.message);
     return { ...estimate(a, b), failed: true };
+  } finally {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', onAbort);
   }
 }
 

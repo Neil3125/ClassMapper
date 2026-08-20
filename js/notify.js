@@ -2,9 +2,18 @@
 //
 // Browser notifications only fire while the app is open — going further needs a
 // push server, which this app deliberately doesn't have. Each class fires at
-// most once per day, tracked in storage so a refresh doesn't re-alert you.
+// most once per day per alert kind, tracked in storage so a refresh doesn't
+// re-alert you.
+//
+// Snooze/Got it buttons only render on a notification shown through an active
+// service worker registration — that's a browser platform limit, not a
+// choice made here (plain `new Notification()` supports no actions in any
+// browser). Offline mode is opt-in, so most users won't have a worker
+// registered; fire() below feature-detects and falls back to a plain
+// Notification with no actions but still-working tag-based replacement.
 
 import { read, write, KEYS, settings, saveSettings } from './store.js';
+import { fmtDistance } from './route.js';
 
 export function supported() {
   return 'Notification' in window;
@@ -35,6 +44,10 @@ export function enabled() {
 
 export function alertCueEnabled() {
   return Boolean(settings().alertCue);
+}
+
+export function headsUpEnabled() {
+  return Boolean(settings().headsUpAlert);
 }
 
 /**
@@ -94,37 +107,114 @@ function markFired(id) {
   write(KEYS.FIRED, store);
 }
 
+function unmarkFired(id) {
+  const store = fired();
+  const i = store.ids.indexOf(id);
+  if (i === -1) return;
+  store.ids.splice(i, 1);
+  write(KEYS.FIRED, store);
+}
+
 export function alreadyFired(id) {
   return fired().ids.includes(id);
 }
 
+// ---------- snooze ----------
+
+function snoozeMap() {
+  return read(KEYS.SNOOZED, {});
+}
+
+export function isSnoozed(id, now = new Date()) {
+  const until = snoozeMap()[id];
+  return typeof until === 'number' && now.getTime() < until;
+}
+
+/** Silences an alert id for `minutes`, and clears its fired flag so it can fire again once the snooze lapses rather than staying suppressed for the rest of the day. */
+export function snooze(id, minutes = 5) {
+  const map = snoozeMap();
+  map[id] = Date.now() + minutes * 60000;
+  write(KEYS.SNOOZED, map);
+  unmarkFired(id);
+}
+
+// ---------- pure timing predicates ----------
+// No storage or Notification API involved — easy to unit test against plain
+// Date fixtures, and it keeps the "when does this fire" logic in one place
+// per alert kind instead of buried in each fire path below.
+
+export function shouldFireHeadsUp(now, leaveAt, minsBefore = 10) {
+  return now >= new Date(leaveAt.getTime() - minsBefore * 60000) && now < leaveAt;
+}
+
+export function shouldFireLeave(now, leaveAt) {
+  return now >= leaveAt;
+}
+
+export function isRunningLate(now, leaveAt, thresholdMin = 10) {
+  return now - leaveAt > thresholdMin * 60000;
+}
+
+// ---------- delivery ----------
+
+async function getActiveRegistration() {
+  if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) return null;
+  try {
+    return (await navigator.serviceWorker.getRegistration()) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+const ACTIONS = [
+  { action: 'snooze', title: 'Snooze 5 min' },
+  { action: 'gotit', title: 'Got it' },
+];
+
 /**
- * Fire the leave-now alert for a class, once per day.
- * `leaveAt` is a Date; we alert when now >= leaveAt.
+ * Shows a notification via an active service worker registration when one
+ * exists (so `actions` render), or a plain page Notification otherwise. Both
+ * paths honour `tag`-based replacement, so a repeated call with the same tag
+ * updates the on-screen notification in place either way — only the action
+ * buttons are SW-only, a real browser platform limit, not a gap in this code.
  */
-export function maybeAlert({ cls, leaveAt, walkMin, buildingName }, now = new Date()) {
+async function fire(title, options, { withActions = false } = {}) {
+  const reg = withActions ? await getActiveRegistration() : null;
+  if (reg) {
+    await reg.showNotification(title, { ...options, actions: ACTIONS });
+    return;
+  }
+  const n = new Notification(title, options);
+  n.onclick = () => {
+    window.focus();
+    n.close();
+  };
+}
+
+/**
+ * Fire the leave-now alert for a class, once per day. `leaveAt` is a Date;
+ * we alert when now >= leaveAt. Once that moment is more than 10 minutes
+ * past, this defers to the distinct "running late" alert instead of sending
+ * the now-stale "time to leave" wording.
+ */
+export async function maybeAlert({ cls, leaveAt, walkMin, buildingName }, now = new Date()) {
   if (!enabled()) return false;
-  if (now < leaveAt) return false;
+  if (!shouldFireLeave(now, leaveAt)) return false;
 
   const id = `${cls.id}:${cls.startMin}`;
-  if (alreadyFired(id)) return false;
+  if (isSnoozed(id, now) || alreadyFired(id)) return false;
 
-  // Don't fire a stale alert for something you're already late for by 10+ min.
-  if (now - leaveAt > 10 * 60000) {
+  if (isRunningLate(now, leaveAt)) {
     markFired(id);
-    return false;
+    return maybeLateAlert({ cls, leaveAt, walkMin, buildingName }, now);
   }
 
   try {
-    const n = new Notification(`Time to leave for ${cls.code || 'class'}`, {
-      body: `${walkMin} min walk to ${buildingName}${cls.room ? ` · Room ${cls.room}` : ''}`,
-      tag: id,
-      requireInteraction: false,
-    });
-    n.onclick = () => {
-      window.focus();
-      n.close();
-    };
+    await fire(
+      `Time to leave for ${cls.code || 'class'}`,
+      { body: `${walkMin} min walk to ${buildingName}${cls.room ? ` · Room ${cls.room}` : ''}`, tag: id, requireInteraction: false },
+      { withActions: true },
+    );
     if (alertCueEnabled()) playAlertCue();
     markFired(id);
     return true;
@@ -134,10 +224,105 @@ export function maybeAlert({ cls, leaveAt, walkMin, buildingName }, now = new Da
   }
 }
 
-/** Test notification so you can confirm it works before relying on it. */
+/**
+ * A softer heads-up before the leave-now alert (opt-out via Settings). Uses
+ * its own suffixed id so it can never collide with, or suppress, the main
+ * leave-now alert's fired state.
+ */
+export async function maybeHeadsUp({ cls, leaveAt, walkMin, buildingName }, now = new Date(), minsBefore = 10) {
+  if (!enabled() || !headsUpEnabled()) return false;
+  if (!shouldFireHeadsUp(now, leaveAt, minsBefore)) return false;
+
+  const id = `${cls.id}:${cls.startMin}:headsup`;
+  if (isSnoozed(id, now) || alreadyFired(id)) return false;
+
+  try {
+    await fire(`Leave in about ${minsBefore} min for ${cls.code || 'class'}`, {
+      body: `${walkMin} min walk to ${buildingName}${cls.room ? ` · Room ${cls.room}` : ''}`,
+      tag: id,
+      requireInteraction: false,
+    });
+    markFired(id);
+    return true;
+  } catch (err) {
+    console.warn('Heads-up notification failed', err);
+    return false;
+  }
+}
+
+/** A distinct "running late" notification, used internally once maybeAlert's leave-now window has passed rather than staying silent. */
+async function maybeLateAlert({ cls, leaveAt, walkMin, buildingName }, now) {
+  const id = `${cls.id}:${cls.startMin}:late`;
+  if (isSnoozed(id, now) || alreadyFired(id)) return false;
+
+  try {
+    await fire(
+      `Running late for ${cls.code || 'class'}`,
+      {
+        body: `You were due to leave by now — ${walkMin} min walk to ${buildingName}${cls.room ? ` · Room ${cls.room}` : ''}`,
+        tag: id,
+        requireInteraction: false,
+      },
+      { withActions: true },
+    );
+    if (alertCueEnabled()) playAlertCue();
+    markFired(id);
+    return true;
+  } catch (err) {
+    console.warn('Late notification failed', err);
+    return false;
+  }
+}
+
+// ---------- live-updating walking notification ----------
+// In-memory only (not persisted) — reset on reload same as the fired-alert
+// day rollover would naturally make stale anyway.
+let lastWalkingText = {};
+const finishedWalking = new Set();
+
+/**
+ * Updates the leave-now notification in place with live remaining
+ * distance/time while you're actually walking. No-ops until the leave-now
+ * alert has actually fired — there's nothing to update otherwise — and
+ * skips re-notifying when the text hasn't visibly changed. Deliberately
+ * silent (no re-vibrate/re-sound per update) and has no action buttons —
+ * "snooze" doesn't mean anything once you're already walking.
+ */
+export async function updateWalkingNotification({ cls, buildingName, remainingMeters, liveWalkMin }) {
+  const id = `${cls.id}:${cls.startMin}`;
+  if (!enabled() || !alreadyFired(id) || finishedWalking.has(id)) return;
+
+  const text = `≈${liveWalkMin} min · ${fmtDistance(Math.round(remainingMeters))} to ${buildingName}`;
+  if (lastWalkingText[id] === text) return;
+  lastWalkingText[id] = text;
+
+  try {
+    await fire(`On your way to ${cls.code || 'class'}`, { body: text, tag: id, requireInteraction: false, silent: true });
+  } catch (err) {
+    console.warn('Walking notification update failed', err);
+  }
+}
+
+/** Fires once, replacing the walking notification with an arrival message, then stops further updates for this class today. */
+export async function finishWalkingNotification({ cls, buildingName }) {
+  const id = `${cls.id}:${cls.startMin}`;
+  if (!enabled() || !alreadyFired(id) || finishedWalking.has(id)) return;
+  finishedWalking.add(id);
+  delete lastWalkingText[id];
+
+  try {
+    await fire(`Arrived at ${buildingName}`, { body: `${cls.code || 'Class'} — you're here.`, tag: id, requireInteraction: false, silent: true });
+  } catch (err) {
+    console.warn('Arrival notification failed', err);
+  }
+}
+
+/** Test notification so you can confirm it works before relying on it. Stays synchronous (not async) so the existing try/catch call site still catches the permission check synchronously. */
 export function testAlert() {
   if (permission() !== 'granted') throw new Error('Enable notifications first');
-  new Notification('ClassMapper alerts are working', {
-    body: "You'll get a nudge like this when it's time to leave.",
-  });
+  fire(
+    'ClassMapper alerts are working',
+    { body: "You'll get a nudge like this when it's time to leave." },
+    { withActions: true },
+  ).catch((err) => console.warn('Test notification failed', err));
 }

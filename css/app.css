@@ -520,6 +520,10 @@ html, body {
 .board { --urgency: var(--urgent-ample); }
 .board.is-soon { --urgency: var(--urgent-soon); }
 .board.is-now  { --urgency: var(--urgent-now); }
+/* Arrived is a resolved state, not an urgency level — deliberately borrows
+   --good rather than extending the urgency ramp, so it doesn't compete with
+   the crimson/gold "you need to act" language elsewhere on the board. */
+.board.is-arrived { --urgency: var(--good); }
 
 .board__eyebrow {
   display: flex; align-items: baseline; gap: 8px;
@@ -629,6 +633,14 @@ html, body {
   color: var(--urgency);
   margin-top: 7px;
   font-variant-numeric: tabular-nums;
+}
+/* The live GPS-driven supplement below the leave-by line — quieter than it
+   (ink-soft, not the urgency color) so the 30s-tick number stays the one
+   the eye lands on first. */
+.board__leave--live {
+  color: var(--ink-soft);
+  font-weight: 500;
+  margin-top: 2px;
 }
 
 /* Quiet on purpose — supplements the countdown, never competes with it. */
@@ -790,6 +802,25 @@ html, body {
 
 .cm-me { stroke: var(--surface); stroke-width: 3; fill: #1a73e8; fill-opacity: 1; }
 .cm-me-accuracy { stroke: #1a73e8; stroke-opacity: 0.35; fill: #1a73e8; fill-opacity: 0.12; }
+
+/* Direction arrow next to the live-position dot, same blue so it reads as
+   one marker. A real box + clip-path (not the zero-size border-triangle
+   trick) so transform-origin can pin rotation to the dot's exact position
+   rather than the triangle's own tip. */
+.cm-me-heading-wrap { position: relative; background: none; border: none; }
+.cm-me-heading {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 20px;
+  margin-left: -7px;
+  margin-top: -20px;
+  background: #1a73e8;
+  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 0 1px var(--surface));
+}
 .cm-picking { cursor: crosshair !important; }
 
 .leaflet-control-attribution { font-size: 9px; }
@@ -1175,6 +1206,22 @@ fieldset.days legend { font-size: 0.78rem; font-weight: 600; color: var(--ink-so
   resize: vertical;
 }
 .backup-paste:focus { outline: 2px solid var(--gold); outline-offset: 1px; border-color: var(--gold); }
+
+.schedule-paste {
+  display: block;
+  width: 100%;
+  min-height: 110px;
+  margin: 8px 0;
+  padding: 10px 11px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  resize: vertical;
+}
+.schedule-paste:focus { outline: 2px solid var(--gold); outline-offset: 1px; border-color: var(--gold); }
 
 .busy { text-align: center; padding: 32px 0; color: var(--ink-soft); }
 .spinner {

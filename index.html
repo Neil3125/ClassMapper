@@ -103,6 +103,7 @@
 
         <div class="board__bar" id="next-bar" role="presentation"><span id="next-bar-fill"></span></div>
         <div class="board__leave" id="next-leave"></div>
+        <div class="board__leave board__leave--live" id="next-live" hidden></div>
 
         <div class="board__upnext" id="next-upnext" hidden>
           <span class="board__upnext-label">Up next</span>
@@ -270,6 +271,16 @@
         Your image is sent to Google's Gemini API using your own key, only when you pick a file.
         Your schedule is stored on this device only.
       </p>
+
+      <button type="button" id="btn-import-text-toggle" class="btn btn--sm" aria-expanded="false" aria-controls="import-text-block">
+        Or paste schedule text
+      </button>
+      <div id="import-text-block" hidden>
+        <label for="import-text-input">Schedule text</label>
+        <textarea id="import-text-input" class="schedule-paste"
+          placeholder="Paste or type it in, in any format — e.g. &quot;CS 101 Intro to CS, MWF 9-9:50am, Brimmer 204, Dr. Smith&quot;"></textarea>
+        <button type="button" id="btn-import-text-go" class="btn btn--primary btn--block">Parse text</button>
+      </div>
     </div>
 
     <div id="import-busy" class="busy" hidden>
@@ -320,6 +331,9 @@
     </label>
     <label class="check">
       <input type="checkbox" id="toggle-alert-cue"> Also buzz and beep
+    </label>
+    <label class="check">
+      <input type="checkbox" id="toggle-headsup"> Also alert ~10 min early
     </label>
     <label>Extra buffer before leaving
       <select id="input-buffer">

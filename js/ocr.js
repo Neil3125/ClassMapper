@@ -184,6 +184,23 @@ async function generate(body, signal) {
   throw lastErr ?? new Error('No Gemini model responded.');
 }
 
+/** Shared by both entry points below: pull the model's text out of the
+ *  response, parse it as JSON, and turn it into draft records. `emptyHint`
+ *  tailors the "got nothing back" message to whichever input this was. */
+function finishParse(data, emptyHint) {
+  const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') ?? '';
+  if (!text) throw new Error(`The model returned nothing readable. ${emptyHint}`);
+
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('Could not understand the response. Try again or enter the class manually.');
+  }
+
+  return toDrafts(parsed.classes ?? []);
+}
+
 /**
  * Parse a schedule screenshot.
  * Returns { classes: [...draft records], warnings: [...] }
@@ -214,17 +231,46 @@ export async function parseScreenshot(file, { signal } = {}) {
     signal,
   );
 
-  const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') ?? '';
-  if (!text) throw new Error('The model returned nothing readable. Try a clearer screenshot.');
+  return finishParse(data, 'Try a clearer screenshot.');
+}
 
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new Error('Could not understand the response. Try again or enter the class manually.');
-  }
+/**
+ * Parse a schedule typed or pasted in as plain text — same model, prompt,
+ * schema, and draft shape as parseScreenshot; the only difference is there's
+ * no inline_data image part, so this reuses buildPrompt/generate/toDrafts
+ * unchanged rather than duplicating any of that.
+ * Returns { classes: [...draft records], warnings: [...] }
+ */
+export async function parseText(text, { signal } = {}) {
+  if (!getKey()) throw new Error('Add your Gemini API key in Settings first');
 
-  return toDrafts(parsed.classes ?? []);
+  const trimmed = String(text ?? '').trim();
+  if (trimmed.length < 4) throw new Error('Paste or type your schedule first.');
+
+  const manifest = promptManifest();
+
+  const data = await generate(
+    {
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: `${buildPrompt(manifest)}\n\nSchedule text (typed or pasted by the user — not an image):\n${trimmed}`,
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0,
+        responseMimeType: 'application/json',
+        responseSchema: RESPONSE_SCHEMA,
+      },
+    },
+    signal,
+  );
+
+  return finishParse(data, 'Try rephrasing it, or enter the class manually.');
 }
 
 const VALID_DAYS = new Set(['U', 'M', 'T', 'W', 'R', 'F', 'S']);

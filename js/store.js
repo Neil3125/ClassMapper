@@ -12,6 +12,7 @@ export const KEYS = {
   ROUTES: 'routeCache',
   SETTINGS: 'settings',
   FIRED: 'firedAlerts',
+  SNOOZED: 'snoozedAlerts', // { [alertId]: epoch-ms the snooze expires }
   OCR_MODEL: 'ocrModel', // whichever Gemini model candidate last worked
 };
 
@@ -42,6 +43,7 @@ export const DEFAULT_SETTINGS = {
   bufferMin: 5,          // extra minutes of slack before "leave by"
   walkSpeed: 1.35,       // m/s, used by the offline fallback estimate
   notifications: false,
+  headsUpAlert: true,    // a softer heads-up alert ~10 min before the leave-by one
   alertCue: false,       // vibration + tone alongside the leave-by notification
   satellite: false,
   offline: false,        // opt-in service worker; see registerServiceWorker()

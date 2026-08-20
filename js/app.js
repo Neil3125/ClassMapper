@@ -5,6 +5,7 @@ import * as B from './buildings.js';
 import * as S from './schedule.js';
 import * as R from './route.js';
 import * as M from './map.js';
+import * as geo from './geo.js';
 import * as OCR from './ocr.js';
 import * as N from './notify.js';
 import * as EXT from './external.js';
@@ -35,6 +36,16 @@ const state = {
   todayView: 'day',    // 'day' | 'week' — which view the Today panel shows
   lastRouteOrigin: null, // {lat, lon} the walk time was last computed from
   lastRouteRefreshAt: 0, // Date.now() of that computation
+  routeAbort: null,      // AbortController for the in-flight R.walk() in refresh()
+
+  // Live tracking: everything updateLiveProgress() needs on every GPS fix,
+  // set alongside state.route in refresh() so the two can't disagree.
+  routeDestination: null, // {lat, lon, name} of the current next-class building
+  nextOccurrence: null,   // the `next` object from S.nextClass(), as of the last refresh()
+  boardArgs: null,        // last args passed to renderBoard(), so a live update can re-render with just `arrived` overridden
+  arrivedNow: false,      // in-memory hysteresis flag — not persisted, resets on reload
+  smoothedHeading: null,  // degrees, eased across noisy GPS fixes
+  lastHeadingFix: null,   // {lat, lon} a bearing-derived heading was last computed from
 };
 
 // ---------- boot ----------
@@ -79,6 +90,39 @@ async function boot() {
   setInterval(tick, 30_000);
 
   registerServiceWorker();
+  wireNotificationActions();
+}
+
+/**
+ * Snooze/Got it on a notification only work through a service worker (see
+ * notify.js), which can't touch localStorage itself — it hands the action
+ * off here instead. Two paths land on the same handler: a postMessage from
+ * the worker if a tab was already open, or a `?notif-action=` query string
+ * on a fresh load if the worker had to open one.
+ */
+function wireNotificationActions() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (e) => {
+      if (e.data?.type !== 'cm-notification-action') return;
+      handleNotificationAction(e.data.action, e.data.tag);
+    });
+  }
+
+  const params = new URLSearchParams(location.search);
+  const action = params.get('notif-action');
+  const tag = params.get('tag');
+  if (action && tag) {
+    handleNotificationAction(action, tag);
+    history.replaceState(null, '', location.pathname);
+  }
+}
+
+function handleNotificationAction(action, tag) {
+  if (action === 'snooze') {
+    N.snooze(tag, 5);
+    refresh();
+  }
+  // 'gotit' just dismisses the notification (already closed by the worker) — nothing else to do.
 }
 
 /**
@@ -140,10 +184,32 @@ function startGeolocation() {
 
   navigator.geolocation.watchPosition(
     (pos) => {
-      const { latitude, longitude, accuracy } = pos.coords;
+      const { latitude, longitude, accuracy, heading, speed } = pos.coords;
       const first = !state.me;
       state.me = { lat: latitude, lon: longitude, accuracy };
-      M.showMe(latitude, longitude, accuracy);
+
+      // Prefer the device's own heading once it's moving fast enough for
+      // that to be meaningful (stationary heading readings are noise);
+      // otherwise derive one from consecutive fixes, only recomputed once
+      // you've moved enough that GPS jitter alone can't spin it.
+      let rawHeading = null;
+      if (Number.isFinite(heading) && Number.isFinite(speed) && speed > 0.3) {
+        rawHeading = heading;
+        state.lastHeadingFix = state.me;
+      } else if (state.lastHeadingFix && R.haversine(state.lastHeadingFix, state.me) >= 3) {
+        rawHeading = geo.bearing(state.lastHeadingFix, state.me);
+        state.lastHeadingFix = state.me;
+      }
+      if (rawHeading !== null) {
+        state.smoothedHeading =
+          state.smoothedHeading === null ? rawHeading : geo.lerpAngleDeg(state.smoothedHeading, rawHeading, 0.35);
+      }
+
+      M.showMe(latitude, longitude, accuracy, state.smoothedHeading);
+      // Pure local math — arrival detection, live distance/ETA, route
+      // trimming — so it runs on every fix, not gated by the movement/time
+      // thresholds below that exist specifically to ration the routing API.
+      updateLiveProgress();
 
       if (first) {
         state.lastRouteOrigin = state.me;
@@ -173,6 +239,79 @@ function startGeolocation() {
   );
 }
 
+/** Reset everything updateLiveProgress() depends on — used whenever refresh() lands on a state with no routable next class. */
+function clearLiveProgress() {
+  state.routeDestination = null;
+  state.nextOccurrence = null;
+  state.boardArgs = null;
+  state.arrivedNow = false;
+  const liveEl = $('#next-live');
+  if (liveEl) liveEl.hidden = true;
+}
+
+/**
+ * Runs on every GPS fix — pure local math against the route already in hand,
+ * so it isn't gated by the movement/time thresholds that exist specifically
+ * to ration the routing API. Handles arrival detection, the live
+ * distance/ETA line under the leave-by countdown, and — only while the map
+ * is actually showing the next-class route — trimming that route line to
+ * how much of the walk is left.
+ */
+function updateLiveProgress() {
+  const liveEl = $('#next-live');
+  if (
+    !state.route ||
+    !state.routeDestination ||
+    !state.nextOccurrence ||
+    state.nextOccurrence.isNow ||
+    !state.me ||
+    state.route.samePlace
+  ) {
+    if (liveEl) liveEl.hidden = true;
+    return;
+  }
+
+  const remainingMeters = state.route.shape?.length
+    ? geo.remainingRouteMeters(state.route.shape, state.me)
+    : R.haversine(state.me, state.routeDestination) * 1.3;
+  const { walkSpeed } = store.settings();
+  const liveWalkMin = Math.max(0, Math.round(remainingMeters / walkSpeed / 60));
+
+  // Enter "arrived" at 20m, only leave it past 35m — hysteresis so standing
+  // right at the boundary doesn't flicker the board back and forth.
+  const arrived = geo.isArrived(state.me, state.routeDestination, state.arrivedNow ? 35 : 20);
+  if (arrived !== state.arrivedNow) {
+    state.arrivedNow = arrived;
+    if (state.boardArgs) renderBoard({ ...state.boardArgs, arrived });
+    if (arrived) {
+      N.finishWalkingNotification({ cls: state.nextOccurrence.cls, buildingName: state.routeDestination.name });
+    }
+  }
+
+  if (arrived) {
+    if (liveEl) liveEl.hidden = true;
+  } else {
+    if (liveEl) {
+      const eta = new Date(Date.now() + (remainingMeters / walkSpeed) * 1000);
+      liveEl.textContent = `Now ≈${liveWalkMin} min · ${R.fmtDistance(Math.round(remainingMeters))} · arrive ${fmtClock(eta)}`;
+      liveEl.hidden = false;
+    }
+    N.updateWalkingNotification({
+      cls: state.nextOccurrence.cls,
+      buildingName: state.routeDestination.name,
+      remainingMeters,
+      liveWalkMin,
+    });
+  }
+
+  // The map redraw is the one part of this that must respect the
+  // single-map-owner model — a day route or a building search the user is
+  // actively looking at should never get silently overwritten.
+  if (state.mapMode === 'next' && !arrived && state.route.shape?.length) {
+    M.trimRouteToProgress(geo.trimShapeToProgress(state.route.shape, state.me));
+  }
+}
+
 // ---------- the main card ----------
 
 function tick() {
@@ -195,6 +334,7 @@ async function refresh() {
       M.renderStops([]);
       M.clearRoute();
     }
+    clearLiveProgress();
     updateCardSummary('No classes yet');
     return;
   }
@@ -229,6 +369,7 @@ async function refresh() {
     $('#next-leave').textContent = '';
     $('#next-steps').hidden = true;
     $('#next-openin').hidden = true;
+    clearLiveProgress();
     updateCardSummary(headline);
     announce(headline);
     return;
@@ -263,6 +404,7 @@ async function refresh() {
     $('#next-walk').textContent = '';
     $('#next-steps').hidden = true;
     setNote('Open My classes and pick a building so I can route you there.');
+    clearLiveProgress();
     renderBoard({ next, unrouted: 'No building set' });
     announce(`${codeForSr} ${whenForSr}. No building set, so no route.`);
     return;
@@ -275,17 +417,32 @@ async function refresh() {
   if (!origin) {
     $('#next-walk').textContent = 'Turn on location for a walk time';
     $('#next-steps').hidden = true;
+    clearLiveProgress();
     renderBoard({ next, unrouted: `Starts ${S.fmtTime(next.cls.startMin)}` });
     announce(`${codeForSr} ${whenForSr}, ${b.name}. Walk time needs your location.`);
     return;
   }
 
+  // A live GPS origin is skipped from route.js's permanent cache — it's
+  // almost never within a fixed point's ~1m cache precision of a prior fix,
+  // so caching it would just flood and evict real building-pair routes.
+  const isLiveOrigin = origin === state.me;
+  state.routeAbort?.abort();
+  state.routeAbort = new AbortController();
   const token = ++state.routeToken;
-  const route = await R.walk(origin, b);
+  const route = await R.walk(origin, b, { cache: !isLiveOrigin, signal: state.routeAbort.signal });
   if (token !== state.routeToken) return; // a newer refresh already won
 
   state.route = route;
   if (!route) return;
+
+  // A new destination (different class, or the building was corrected)
+  // means any in-progress "arrived" state no longer applies to it.
+  if (state.routeDestination?.lat !== b.lat || state.routeDestination?.lon !== b.lon) {
+    state.arrivedNow = false;
+  }
+  state.routeDestination = { lat: b.lat, lon: b.lon, name: b.name };
+  state.nextOccurrence = next;
 
   // The day-route legend owns the map while it's open — leave its lines alone,
   // but keep computing walk time and leave-by below so the card doesn't go
@@ -299,7 +456,12 @@ async function refresh() {
     ? 'Same building — no walk'
     : `${route.minutes} min walk · ${R.fmtDistance(route.meters)}`;
 
-  renderBoard({ next, leaveAt, minsToLeave, walkMin: route.minutes });
+  state.boardArgs = { next, leaveAt, minsToLeave, walkMin: route.minutes };
+  renderBoard({ ...state.boardArgs, arrived: state.arrivedNow });
+  // Position/destination may already be known even if this particular tick
+  // didn't come from a GPS fix (e.g. the 30s ticker) — let the live numbers
+  // catch up to the route that was just (re)computed.
+  updateLiveProgress();
 
   const steps = $('#next-steps');
   if (route.steps?.length) {
@@ -330,6 +492,10 @@ async function refresh() {
   );
 
   if (!next.isNow) {
+    // Heads-up fires strictly before leaveAt; maybeAlert only fires at/after
+    // it — their windows never overlap, so there's no double-fire risk, and
+    // each guards its own fired-id independently.
+    N.maybeHeadsUp({ cls: next.cls, leaveAt, walkMin: route.minutes, buildingName: b.name }, now);
     N.maybeAlert({ cls: next.cls, leaveAt, walkMin: route.minutes, buildingName: b.name }, now);
   }
 }
@@ -388,7 +554,7 @@ async function findBuilding() {
   }
 
   setFindMeta('Finding a walking route…');
-  const route = await R.walk(originPoint, building);
+  const route = await R.walk(originPoint, building, { cache: originPoint !== state.me });
   // Bail if the user has since dismissed this or searched something else.
   if (state.mapMode !== 'find' || state.mapContext?.building?.id !== building.id) return;
 
@@ -474,7 +640,7 @@ let lastDigits = null;
  * one big number, a draining bar, and colour that only appears once time is
  * actually short. Urgency is set once on the container and inherited.
  */
-function renderBoard({ next, leaveAt, minsToLeave, walkMin, unrouted }) {
+function renderBoard({ next, leaveAt, minsToLeave, walkMin, unrouted, arrived }) {
   const board = $('#next-board');
   const digitsEl = $('#next-digits');
   const unitEl = $('#next-unit');
@@ -520,6 +686,14 @@ function renderBoard({ next, leaveAt, minsToLeave, walkMin, unrouted }) {
     label = 'In class';
     urgency = 'now';
     leaveLine = `Ends at ${S.fmtTime(next.cls.endMin)}`;
+  } else if (arrived) {
+    // A resolved state, not an urgency level — you got there, the countdown
+    // isn't the point anymore.
+    digits = 'HERE';
+    unit = '';
+    label = 'Arrived';
+    urgency = 'arrived';
+    leaveLine = `Class starts at ${S.fmtTime(next.cls.startMin)}`;
   } else if (minsToLeave <= 0) {
     const behind = Math.abs(minsToLeave);
     digits = 'GO';
@@ -539,7 +713,7 @@ function renderBoard({ next, leaveAt, minsToLeave, walkMin, unrouted }) {
   }
 
   // The bar drains over the last hour of waiting; full when there's ages to go.
-  const pct = next.isNow || minsToLeave <= 0 ? 1 : Math.max(0, Math.min(1, minsToLeave / 60));
+  const pct = next.isNow || arrived || minsToLeave <= 0 ? 1 : Math.max(0, Math.min(1, minsToLeave / 60));
   applyBoard({ board, digitsEl, unitEl, labelEl, leaveEl, fill, digits, unit, label, urgency, leaveLine, pct });
 }
 
@@ -547,6 +721,7 @@ function renderBoard({ next, leaveAt, minsToLeave, walkMin, unrouted }) {
 function applyBoard({ board, digitsEl, unitEl, labelEl, leaveEl, fill, digits, unit, label, urgency, leaveLine, pct }) {
   board.classList.toggle('is-soon', urgency === 'soon');
   board.classList.toggle('is-now', urgency === 'now');
+  board.classList.toggle('is-arrived', urgency === 'arrived');
   digitsEl.classList.toggle('is-word', !/^\d+$/.test(digits));
 
   // Split-flap tick, only when the value actually changed — the refresh runs
@@ -1373,6 +1548,19 @@ function wireImport() {
     showImportStage('start');
   };
   $('#btn-review-save').onclick = saveDrafts;
+
+  // A toggle rather than always-visible: the dropzone is still the common
+  // path, and showing a textarea by default would make the panel look more
+  // complicated than it needs to for a screenshot import.
+  const textToggle = $('#btn-import-text-toggle');
+  const textBlock = $('#import-text-block');
+  textToggle.onclick = () => {
+    const showing = textBlock.hidden;
+    textBlock.hidden = !showing;
+    textToggle.setAttribute('aria-expanded', String(showing));
+    if (showing) $('#import-text-input').focus();
+  };
+  $('#btn-import-text-go').onclick = () => handleTextImport($('#import-text-input').value);
 }
 
 function showImportStage(stage) {
@@ -1380,6 +1568,14 @@ function showImportStage(stage) {
   $('#import-start').hidden = stage !== 'start';
   $('#import-busy').hidden = stage !== 'busy';
   $('#import-review').hidden = stage !== 'review';
+}
+
+/** Shared by both import paths — a parse result's draft shape is identical whether it came from a screenshot or typed text. */
+function applyParseResult(result) {
+  state.drafts = result.classes;
+  renderReview(result.warnings);
+  showImportStage(result.classes.length ? 'review' : 'start');
+  if (!result.classes.length) toast(result.warnings[0] ?? 'Nothing found there', true);
 }
 
 async function handleImage(file) {
@@ -1393,11 +1589,24 @@ async function handleImage(file) {
 
   showImportStage('busy');
   try {
-    const result = await OCR.parseScreenshot(file);
-    state.drafts = result.classes;
-    renderReview(result.warnings);
-    showImportStage(result.classes.length ? 'review' : 'start');
-    if (!result.classes.length) toast(result.warnings[0] ?? 'Nothing found in that image', true);
+    applyParseResult(await OCR.parseScreenshot(file));
+  } catch (err) {
+    showImportStage('start');
+    toast(err.message, true);
+  }
+}
+
+async function handleTextImport(text) {
+  if (!String(text ?? '').trim()) return toast('Paste or type your schedule first', true);
+  if (!OCR.hasKey()) {
+    showImportStage('start');
+    return toast('Add your Gemini API key in Settings first', true);
+  }
+
+  showImportStage('busy');
+  try {
+    applyParseResult(await OCR.parseText(text));
+    $('#import-text-input').value = '';
   } catch (err) {
     showImportStage('start');
     toast(err.message, true);
@@ -1563,6 +1772,7 @@ function wireSettings() {
   $('#input-speed').value = String(cfg.walkSpeed);
   $('#toggle-notify').checked = N.enabled();
   $('#toggle-alert-cue').checked = N.alertCueEnabled();
+  $('#toggle-headsup').checked = N.headsUpEnabled();
   if (OCR.hasKey()) $('#input-key').placeholder = '•••••••• saved';
 
   $('#btn-save-key').onclick = () => {
@@ -1617,6 +1827,8 @@ function wireSettings() {
     store.saveSettings({ alertCue: e.target.checked });
     if (e.target.checked) N.playAlertCue();
   };
+
+  $('#toggle-headsup').onchange = (e) => store.saveSettings({ headsUpAlert: e.target.checked });
 
   $('#btn-test-cue').onclick = () => N.playAlertCue();
 

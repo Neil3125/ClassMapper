@@ -13,8 +13,12 @@ let map;
 let layers = {};
 let markerGroup;
 let routeLine;
+let lastRouteShape = null;
 let meMarker;
 let meAccuracy;
+let meHeadingMarker;
+let meAnimFrame = null;
+let meDisplayed = null; // {lat, lon} currently on screen, for interpolation
 let pinDropHandler = null;
 
 export function init(elementId = 'map') {
@@ -129,13 +133,38 @@ function routePair(shape, { active = false } = {}) {
   return [casing, core];
 }
 
+// Two shapes end in "the same place" (~2m, in local degrees at campus
+// latitude) — used to decide whether a redraw can update the existing line
+// in place instead of tearing it down, so a 30s refresh or a live-progress
+// trim doesn't visibly flicker the route away and back.
+function endpointsClose(a, b, thresholdDeg = 0.00002) {
+  if (!a?.length || !b?.length) return false;
+  const pa = a[a.length - 1];
+  const pb = b[b.length - 1];
+  return Math.abs(pa[0] - pb[0]) < thresholdDeg && Math.abs(pa[1] - pb[1]) < thresholdDeg;
+}
+
 export function drawRoute(shape) {
+  if (routeLine && shape?.length && endpointsClose(lastRouteShape, shape)) {
+    routeLine.forEach((l) => l.setLatLngs(shape));
+    lastRouteShape = shape;
+    return;
+  }
   if (routeLine) routeLine.forEach((l) => map.removeLayer(l));
   routeLine = null;
+  lastRouteShape = null;
   if (!shape?.length) return;
 
   routeLine = routePair(shape, { active: true });
   routeLine.forEach((l) => l.addTo(map));
+  lastRouteShape = shape;
+}
+
+/** Shrinks the current route line in place to `remainingShape` — no teardown, so it doesn't flicker as you walk. Does nothing if there's no route line drawn. */
+export function trimRouteToProgress(remainingShape) {
+  if (!routeLine || !remainingShape?.length) return;
+  routeLine.forEach((l) => l.setLatLngs(remainingShape));
+  lastRouteShape = remainingShape;
 }
 
 export function clearRoute() {
@@ -145,9 +174,27 @@ export function clearRoute() {
 // Separate layer set from the single next-class route above, so the whole-day
 // view can show, hide, or solo individual legs without disturbing it.
 let legLayers = [];
+let lastLegShapes = [];
+
+function legsCompatible(prevShapes, legs) {
+  if (prevShapes.length !== legs.length) return false;
+  return legs.every((leg, i) => {
+    const hasShape = Boolean(leg?.shape?.length);
+    const hadShape = Boolean(prevShapes[i]?.length);
+    if (hasShape !== hadShape) return false;
+    return !hasShape || endpointsClose(prevShapes[i], leg.shape);
+  });
+}
 
 /** Draw the day route as one polyline pair per leg, each independently toggleable. */
 export function drawLegs(legs) {
+  if (legsCompatible(lastLegShapes, legs)) {
+    legs.forEach((leg, i) => {
+      if (leg?.shape?.length) legLayers[i]?.forEach((l) => l.setLatLngs(leg.shape));
+    });
+    lastLegShapes = legs.map((l) => l?.shape ?? null);
+    return;
+  }
   clearLegs();
   legLayers = legs.map((leg) => {
     if (!leg?.shape?.length) return null;
@@ -155,18 +202,54 @@ export function drawLegs(legs) {
     pair.forEach((l) => l.addTo(map));
     return pair;
   });
+  lastLegShapes = legs.map((l) => l?.shape ?? null);
 }
 
 export function clearLegs() {
   legLayers.forEach((pair) => pair?.forEach((l) => map.removeLayer(l)));
   legLayers = [];
+  lastLegShapes = [];
 }
 
 export function setLegVisible(i, visible) {
   legLayers[i]?.forEach((l) => l.setStyle({ opacity: visible ? 1 : 0 }));
 }
 
-export function showMe(lat, lon, accuracy) {
+function reducedMotion() {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+}
+
+/** Eases the dot (and heading arrow, if any) from wherever it's currently drawn to the new fix, instead of jumping between GPS updates. */
+function animateMeTo(lat, lon, durationMs = 450) {
+  if (reducedMotion()) {
+    meDisplayed = { lat, lon };
+    meMarker.setLatLng([lat, lon]);
+    meHeadingMarker?.setLatLng([lat, lon]);
+    return;
+  }
+
+  const from = meDisplayed ?? { lat, lon };
+  const to = { lat, lon };
+  const start = performance.now();
+  if (meAnimFrame) cancelAnimationFrame(meAnimFrame);
+
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / durationMs);
+    const eased = 1 - (1 - t) ** 2;
+    meDisplayed = { lat: from.lat + (to.lat - from.lat) * eased, lon: from.lon + (to.lon - from.lon) * eased };
+    meMarker.setLatLng([meDisplayed.lat, meDisplayed.lon]);
+    meHeadingMarker?.setLatLng([meDisplayed.lat, meDisplayed.lon]);
+    meAnimFrame = t < 1 ? requestAnimationFrame(step) : null;
+  };
+  meAnimFrame = requestAnimationFrame(step);
+}
+
+/**
+ * `heading` (degrees, 0 = north) is optional — pass a finite number to show a
+ * direction arrow, or omit/null to hide it (e.g. while stationary, where a
+ * device- or fix-derived heading isn't meaningful).
+ */
+export function showMe(lat, lon, accuracy, heading) {
   if (!meMarker) {
     meMarker = L.circleMarker([lat, lon], {
       className: 'cm-me',
@@ -174,9 +257,37 @@ export function showMe(lat, lon, accuracy) {
       weight: 3,
     }).addTo(map);
     meAccuracy = L.circle([lat, lon], { className: 'cm-me-accuracy', radius: accuracy ?? 0, weight: 1 }).addTo(map);
+    meDisplayed = { lat, lon };
   } else {
-    meMarker.setLatLng([lat, lon]);
+    // The accuracy ring is secondary — snap it immediately rather than
+    // animating, so only the dot itself (the thing you're actually reading)
+    // eases between fixes.
     meAccuracy.setLatLng([lat, lon]).setRadius(accuracy ?? 0);
+    animateMeTo(lat, lon);
+  }
+
+  if (Number.isFinite(heading)) {
+    if (!meHeadingMarker) {
+      meHeadingMarker = L.marker([meDisplayed.lat, meDisplayed.lon], {
+        icon: L.divIcon({
+          className: 'cm-me-heading-wrap',
+          html: '<div class="cm-me-heading"></div>',
+          iconSize: [26, 26],
+          iconAnchor: [13, 13],
+        }),
+        interactive: false,
+        keyboard: false,
+        zIndexOffset: 1000,
+      }).addTo(map);
+    }
+    // Rotate the inner div, not the element Leaflet itself positions —
+    // Leaflet drives that one's transform for placement (translate3d), and
+    // overwriting it here would fight that and break the marker's position.
+    const arrow = meHeadingMarker.getElement()?.querySelector('.cm-me-heading');
+    if (arrow) arrow.style.transform = `rotate(${heading}deg)`;
+  } else if (meHeadingMarker) {
+    map.removeLayer(meHeadingMarker);
+    meHeadingMarker = null;
   }
 }
 
