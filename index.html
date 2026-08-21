@@ -342,10 +342,26 @@
     <label class="check">
       <input type="checkbox" id="toggle-headsup"> Also alert ~10 min early
     </label>
+    <label class="check">
+      <input type="checkbox" id="toggle-background-alerts" disabled> Alerts even when closed
+    </label>
+    <p class="hint" id="background-alerts-hint">
+      Routes your leave-by text through a small relay server so it can still reach you with ClassMapper fully closed — the relay only ever sees that finished text, never your schedule. Needs a one-time setup; see push-relay/README.md.
+    </p>
+    <div id="background-feedback" class="feedback"></div>
     <label>Extra buffer before leaving
       <select id="input-buffer">
         <option value="0">No buffer</option>
         <option value="3">3 minutes</option>
+        <option value="5">5 minutes</option>
+        <option value="10">10 minutes</option>
+        <option value="15">15 minutes</option>
+      </select>
+    </label>
+    <label>Classes actually end early by
+      <span class="hint">some schools run a passing period, so the room clears out before the printed end time</span>
+      <select id="input-passing">
+        <option value="0">Not at my school</option>
         <option value="5">5 minutes</option>
         <option value="10">10 minutes</option>
         <option value="15">15 minutes</option>

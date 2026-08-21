@@ -8,6 +8,7 @@ import * as M from './map.js';
 import * as geo from './geo.js';
 import * as OCR from './ocr.js';
 import * as N from './notify.js';
+import * as Push from './push.js';
 import * as EXT from './external.js';
 import { APP_VERSION, BUILD_DATE } from './version.js';
 
@@ -129,14 +130,18 @@ function handleNotificationAction(action, tag) {
 }
 
 /**
- * Offline mode is opt-in (Settings → Offline mode).
+ * Both offline mode and background alerts are opt-in (Settings), and both
+ * need the same service worker running — offline mode for its file cache,
+ * background alerts for the `push`/`notificationclick` listeners that let a
+ * notification arrive with the app fully closed. Either one wanting it is
+ * enough to keep it registered.
  *
- * A service worker caches the app's own files, which is what makes the app work
- * with no signal — but it also sits between the page and the server forever. A
- * worker that gets into a bad state can keep serving stale files with no way to
- * fix it from inside the app. Turning it on deliberately, once you know the app
- * works, keeps that failure mode out of your way. reset.html is the escape
- * hatch if it ever does misbehave.
+ * A service worker sits between the page and the server forever once
+ * installed, and one that gets into a bad state can keep serving stale files
+ * with no way to fix it from inside the app. Requiring an explicit opt-in
+ * before it's ever registered keeps that failure mode out of your way if you
+ * don't want either feature. reset.html is the escape hatch if it ever does
+ * misbehave.
  */
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
@@ -146,9 +151,10 @@ async function registerServiceWorker() {
 
   try {
     const regs = await navigator.serviceWorker.getRegistrations();
+    const cfg = store.settings();
 
-    if (!store.settings().offline) {
-      // Not opted in: make sure no worker is left running from a previous try.
+    if (!cfg.offline && !cfg.backgroundAlerts) {
+      // Neither opted in: make sure no worker is left running from a previous try.
       await Promise.all(regs.map((r) => r.unregister()));
       return;
     }
@@ -351,6 +357,11 @@ async function refresh() {
   // just needs the schedule, so it's safe to compute before any of the
   // early-return paths that follow.
   renderUpNext(now, classes, cfg);
+  // Same reasoning: the relay sync recomputes its own occurrence list from
+  // scratch, so it shouldn't be tucked inside the one path that happens to
+  // resolve a routable "next" class — internally throttled, so it's cheap
+  // to just call this on every refresh.
+  if (cfg.backgroundAlerts) Push.syncSchedule(state.me).catch(() => {});
 
   if (!next) {
     const headline =
@@ -666,7 +677,7 @@ function renderBoard({ next, leaveAt, minsToLeave, walkMin, unrouted, arrived })
       unit = '';
       label = 'In class';
       urgency = 'now';
-      leaveLine = `Ends at ${S.fmtTime(next.cls.endMin)}`;
+      leaveLine = `Ends at ${S.fmtTime(S.effectiveEndMin(next.cls, store.settings().passingMin))}`;
     } else if (mins < 60) {
       digits = String(mins);
       label = 'Starts in';
@@ -688,7 +699,7 @@ function renderBoard({ next, leaveAt, minsToLeave, walkMin, unrouted, arrived })
     unit = '';
     label = 'In class';
     urgency = 'now';
-    leaveLine = `Ends at ${S.fmtTime(next.cls.endMin)}`;
+    leaveLine = `Ends at ${S.fmtTime(S.effectiveEndMin(next.cls, store.settings().passingMin))}`;
   } else if (arrived) {
     // A resolved state, not an urgency level — you got there, the countdown
     // isn't the point anymore.
@@ -815,6 +826,7 @@ function previousStop(now, next) {
 
 function renderStopsForToday(now, next) {
   const nowMin = S.minutesNow(now);
+  const passingMin = store.settings().passingMin ?? 0;
   const today = S.classesToday(now);
   const stops = today.map((cls, i) => {
     const b = cls.buildingId ? B.get(cls.buildingId) : null;
@@ -822,7 +834,7 @@ function renderStopsForToday(now, next) {
     return {
       building: b,
       label: String(i + 1),
-      state: isNext ? 'next' : cls.endMin <= nowMin ? 'done' : 'later',
+      state: isNext ? 'next' : S.effectiveEndMin(cls, passingMin) <= nowMin ? 'done' : 'later',
       title: cls.code || cls.title || 'Class',
       subtitle: `${S.fmtTime(cls.startMin)}–${S.fmtTime(cls.endMin)}${cls.room ? ` · Room ${cls.room}` : ''}`,
       cls,
@@ -930,6 +942,7 @@ function renderToday() {
     return;
   }
 
+  const passingMin = store.settings().passingMin ?? 0;
   const rows = [];
   let lastActiveEnd = null;
   for (const cls of allForDay) {
@@ -939,7 +952,7 @@ function renderToday() {
       if (gap > 0) rows.push({ type: 'gap', minutes: gap, from: lastActiveEnd, to: cls.startMin });
     }
     rows.push({ type: 'class', cls, skipped });
-    if (!skipped) lastActiveEnd = cls.endMin;
+    if (!skipped) lastActiveEnd = S.effectiveEndMin(cls, passingMin);
   }
 
   list.innerHTML = rows
@@ -988,7 +1001,7 @@ function renderToday() {
     }
   };
 
-  const activePlan = S.dayPlan(date); // skip-aware, for the summary line only
+  const activePlan = S.dayPlan(date, S.list(), store.settings()); // skip-aware, for the summary line only
   const classCount = activePlan.filter((p) => p.type === 'class').length;
   if (classCount) {
     $('#today-summary').innerHTML =
@@ -1866,10 +1879,23 @@ function wireSettings() {
 
   const cfg = store.settings();
   $('#input-buffer').value = String(cfg.bufferMin);
+  $('#input-passing').value = String(cfg.passingMin);
   $('#input-speed').value = String(cfg.walkSpeed);
   $('#toggle-notify').checked = N.enabled();
   $('#toggle-alert-cue').checked = N.alertCueEnabled();
   $('#toggle-headsup').checked = N.headsUpEnabled();
+
+  const bgToggle = $('#toggle-background-alerts');
+  if (Push.configured()) {
+    bgToggle.disabled = false;
+    bgToggle.checked = Boolean(cfg.backgroundAlerts);
+  } else {
+    bgToggle.disabled = true;
+    bgToggle.checked = false;
+    $('#background-alerts-hint').textContent =
+      "Not set up yet — deploy push-relay/ first (see push-relay/README.md), then this turns on.";
+  }
+
   if (OCR.hasKey()) $('#input-key').placeholder = '•••••••• saved';
 
   $('#btn-save-key').onclick = () => {
@@ -1926,6 +1952,30 @@ function wireSettings() {
   };
 
   $('#toggle-headsup').onchange = (e) => store.saveSettings({ headsUpAlert: e.target.checked });
+
+  $('#toggle-background-alerts').onchange = async (e) => {
+    const fb = $('#background-feedback');
+    if (e.target.checked) {
+      try {
+        if (!N.enabled()) throw new Error('Turn on notifications above first.');
+        await Push.subscribe();
+        store.saveSettings({ backgroundAlerts: true });
+        await Push.syncSchedule(state.me, { force: true });
+        fb.textContent = 'Background alerts on.';
+        fb.className = 'feedback feedback--good';
+      } catch (err) {
+        e.target.checked = false;
+        fb.textContent = err.message;
+        fb.className = 'feedback feedback--bad';
+      }
+    } else {
+      store.saveSettings({ backgroundAlerts: false });
+      fb.textContent = 'Turning off…';
+      fb.className = 'feedback';
+      await Push.unsubscribe().catch(() => {});
+      fb.textContent = 'Background alerts off.';
+    }
+  };
 
   $('#btn-test-cue').onclick = () => N.playAlertCue();
 
@@ -2006,6 +2056,10 @@ function wireSettings() {
 
   $('#input-buffer').onchange = (e) => {
     store.saveSettings({ bufferMin: Number(e.target.value) });
+    refresh();
+  };
+  $('#input-passing').onchange = (e) => {
+    store.saveSettings({ passingMin: Number(e.target.value) });
     refresh();
   };
   $('#input-speed').onchange = (e) => {

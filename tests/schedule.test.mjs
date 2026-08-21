@@ -339,3 +339,61 @@ test('findConflicts excludes the candidate itself when editing', () => {
   // Editing CS101 in place: same id, same slot — must not conflict with itself.
   assert.deepEqual(S.findConflicts(CS101, ALL), []);
 });
+
+// --- passing period (classes actually end `passingMin` minutes early) -----
+
+test('effectiveEndMin subtracts the passing period, clamped to never precede the start', () => {
+  const cls = { startMin: 600, endMin: 660 }; // 10:00-11:00
+  assert.equal(S.effectiveEndMin(cls, 10), 650);
+  assert.equal(S.effectiveEndMin(cls, 0), 660);
+  assert.equal(S.effectiveEndMin(cls), 660); // default: off
+  assert.equal(S.effectiveEndMin(cls, 90), 600); // an absurd passing period still can't precede start
+});
+
+test('nextClass treats a class as over once the passing period elapses, not at its printed end', () => {
+  const hourly = { id: 'h1', code: 'HIST 100', days: ['M'], startMin: 600, endMin: 660 }; // 10:00-11:00 printed
+  // A Monday. 10:55 — printed end (11:00) hasn't passed, but a 10-min passing
+  // period means it effectively ended at 10:50.
+  const now = at(2026, 7, 17, 10, 55);
+  const withoutPassing = S.nextClass(now, [hourly], {});
+  assert.equal(withoutPassing.isNow, true); // no setting: still "in class" per the printed time
+
+  // With the setting, it's no longer "now" — and since it's the only class,
+  // the scan rolls all the way to its next weekly occurrence, not today.
+  const withPassing = S.nextClass(now, [hourly], { passingMin: 10 });
+  assert.equal(withPassing.isNow, false);
+  assert.equal(withPassing.startsAt.getDate(), 24); // next Monday, not the 17th
+});
+
+test('nextClass still reports isNow inside the passing-adjusted window', () => {
+  const hourly = { id: 'h1', code: 'HIST 100', days: ['M'], startMin: 600, endMin: 660 };
+  const now = at(2026, 7, 17, 10, 45); // before the 10:50 effective end
+  const next = S.nextClass(now, [hourly], { passingMin: 10 });
+  assert.equal(next.isNow, true);
+});
+
+test('dayPlan measures the gap from the effective end, not the printed one', () => {
+  // Back-to-back on the schedule (10:00-11:00 then 11:00-12:00), but the
+  // first actually clears out 10 min early — a real 10-min gap opens up.
+  const first = { id: 'a', code: 'A', days: ['M'], startMin: 600, endMin: 660 };
+  const second = { id: 'b', code: 'B', days: ['M'], startMin: 660, endMin: 720 };
+  const now = at(2026, 7, 17, 9, 0); // any time that Monday — dayPlan doesn't gate on `now`'s clock
+  const plan = S.dayPlan(now, [first, second], { passingMin: 10 });
+  const gap = plan.find((p) => p.type === 'gap');
+  assert.ok(gap, 'expected a gap to open up between back-to-back classes');
+  assert.equal(gap.minutes, 10);
+  assert.equal(gap.from, 650);
+  assert.equal(gap.to, 660);
+
+  const planWithoutPassing = S.dayPlan(now, [first, second], {});
+  assert.equal(planWithoutPassing.some((p) => p.type === 'gap'), false); // truly back-to-back without the setting
+});
+
+test('currentClass treats the passing-adjusted end the same way nextClass does', () => {
+  const hourly = { id: 'h1', code: 'HIST 100', days: ['M'], startMin: 600, endMin: 660 };
+  const stillIn = at(2026, 7, 17, 10, 45);
+  const alreadyOut = at(2026, 7, 17, 10, 55);
+  assert.equal(S.currentClass(stillIn, [hourly], { passingMin: 10 })?.id, 'h1');
+  assert.equal(S.currentClass(alreadyOut, [hourly], { passingMin: 10 }), null);
+  assert.equal(S.currentClass(alreadyOut, [hourly], {})?.id, 'h1'); // no setting: still in class per the printed time
+});

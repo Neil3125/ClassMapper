@@ -8,7 +8,7 @@
 // Map tiles are cache-first — they never change and re-downloading them on
 // campus wifi is a waste.
 
-const VERSION = 'v8';
+const VERSION = 'v9';
 const SHELL = `classmapper-shell-${VERSION}`;
 const TILES = `classmapper-tiles-${VERSION}`;
 const TILE_LIMIT = 600;
@@ -27,6 +27,8 @@ const SHELL_FILES = [
   'js/geo.js',
   'js/ocr.js',
   'js/notify.js',
+  'js/push.js',
+  'js/push-config.js',
   'js/external.js',
   'js/version.js',
   'data/buildings.json',
@@ -73,6 +75,32 @@ self.addEventListener('message', (event) => {
   if (event.data === 'version' && event.ports[0]) {
     event.ports[0].postMessage({ version: VERSION, shell: SHELL });
   }
+});
+
+// A push arrived from the relay (see push-relay/) — this is the one thing
+// that can happen with the app fully closed, since the browser wakes a
+// terminated service worker specifically to run this handler. The payload
+// is just { title, body, tag } the app already computed and handed to the
+// relay ahead of time; this only displays it.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    // Not JSON — show something rather than nothing.
+  }
+  const title = data.title || 'ClassMapper';
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || '',
+      tag: data.tag,
+      requireInteraction: false,
+      actions: [
+        { action: 'snooze', title: 'Snooze 5 min' },
+        { action: 'gotit', title: 'Got it' },
+      ],
+    }),
+  );
 });
 
 // Snooze/Got it on a notification shown via showNotification(). A service

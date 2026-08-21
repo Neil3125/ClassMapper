@@ -41,9 +41,11 @@ export function remove(key) {
 
 export const DEFAULT_SETTINGS = {
   bufferMin: 5,          // extra minutes of slack before "leave by"
+  passingMin: 0,         // classes actually end this many minutes before their listed end time (a common-hour/passing-period schedule quirk); 0 = off
   walkSpeed: 1.35,       // m/s, used by the offline fallback estimate
   notifications: false,
   headsUpAlert: true,    // a softer heads-up alert ~10 min before the leave-by one
+  backgroundAlerts: false, // deliver leave-by alerts via push even when the app is closed (needs push-relay/, see js/push.js)
   alertCue: false,       // vibration + tone alongside the leave-by notification
   satellite: false,
   offline: false,        // opt-in service worker; see registerServiceWorker()

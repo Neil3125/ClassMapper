@@ -108,6 +108,18 @@ export function classesToday(now = new Date(), classes = list()) {
 }
 
 /**
+ * Some schools run every class `passingMin` minutes short of its printed end
+ * time so the room clears out before the next class starts on the hour — the
+ * room is free, and you should be moving, before the schedule's own endMin.
+ * Clamped to never land before the class's own start, so a pathologically
+ * short class (or an overlarge passing period) can't produce a negative
+ * window.
+ */
+export function effectiveEndMin(cls, passingMin = 0) {
+  return Math.max(cls.startMin, cls.endMin - passingMin);
+}
+
+/**
  * Shared scan behind both `nextClass` and `upcoming`: walks up to 8 days
  * forward from `now` (so a Friday afternoon rolls to Monday morning),
  * collecting meetings in chronological order and stopping once `limit` are
@@ -118,6 +130,7 @@ function scanMeetings(now, classes, range, limit) {
   if (!classes.length) return [];
   if (semesterPhase(now, range) !== 'in') return [];
   const nowMin = minutesNow(now);
+  const passingMin = range.passingMin ?? 0;
   const out = [];
 
   for (let offset = 0; offset < 8 && out.length < limit; offset++) {
@@ -125,8 +138,9 @@ function scanMeetings(now, classes, range, limit) {
     dateForOffset.setDate(dateForOffset.getDate() + offset);
 
     for (const cls of classesOnDate(dateForOffset, classes)) {
-      // Today: skip meetings that have already finished.
-      if (offset === 0 && cls.endMin <= nowMin) continue;
+      const effEnd = effectiveEndMin(cls, passingMin);
+      // Today: skip meetings that have already effectively finished.
+      if (offset === 0 && effEnd <= nowMin) continue;
 
       const startsAt = new Date(now);
       startsAt.setDate(startsAt.getDate() + offset);
@@ -144,7 +158,7 @@ function scanMeetings(now, classes, range, limit) {
         startsAt,
         endsAt,
         minutesAway: Math.round((startsAt - now) / 60000),
-        isNow: offset === 0 && cls.startMin <= nowMin && nowMin < cls.endMin,
+        isNow: offset === 0 && cls.startMin <= nowMin && nowMin < effEnd,
       });
 
       if (out.length >= limit) break;
@@ -217,25 +231,35 @@ export function semesterPhase(now = new Date(), range = {}) {
   return 'in';
 }
 
-/** The class happening right now, if any. */
-export function currentClass(now = new Date(), classes = list()) {
+/** The class happening right now, if any — effectively ended (see effectiveEndMin) counts as over. */
+export function currentClass(now = new Date(), classes = list(), range = {}) {
   const nowMin = minutesNow(now);
-  return classesToday(now, classes).find((c) => c.startMin <= nowMin && nowMin < c.endMin) ?? null;
+  const passingMin = range.passingMin ?? 0;
+  return (
+    classesToday(now, classes).find(
+      (c) => c.startMin <= nowMin && nowMin < effectiveEndMin(c, passingMin),
+    ) ?? null
+  );
 }
 
 /**
  * Today's schedule with the gaps between classes filled in, for the day view.
+ * Gaps are measured from each class's effective end, not its printed one, so
+ * a school that dismisses `passingMin` minutes early shows the real walking
+ * window instead of one that looks shorter than it actually is.
  * Returns [{type:'class', cls} | {type:'gap', minutes}]
  */
-export function dayPlan(now = new Date(), classes = list()) {
+export function dayPlan(now = new Date(), classes = list(), range = {}) {
+  const passingMin = range.passingMin ?? 0;
   const today = classesToday(now, classes);
   const out = [];
   today.forEach((cls, i) => {
     out.push({ type: 'class', cls });
     const next = today[i + 1];
     if (next) {
-      const gap = next.startMin - cls.endMin;
-      if (gap > 0) out.push({ type: 'gap', minutes: gap, from: cls.endMin, to: next.startMin });
+      const effEnd = effectiveEndMin(cls, passingMin);
+      const gap = next.startMin - effEnd;
+      if (gap > 0) out.push({ type: 'gap', minutes: gap, from: effEnd, to: next.startMin });
     }
   });
   return out;

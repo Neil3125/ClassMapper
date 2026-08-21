@@ -1,0 +1,15 @@
+{
+  "name": "classmapper-push-relay",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Minimal Web Push relay for ClassMapper background alerts. No dependencies — VAPID signing and payload encryption are hand-rolled on Web Crypto (see src/webpush.js) because Workers can't run the web-push npm package's Node-https transport.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}
